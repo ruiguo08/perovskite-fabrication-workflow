@@ -438,7 +438,7 @@ class ResultBrowserTests(unittest.TestCase):
                 session,
                 "Array.from(document.querySelectorAll('.result-section-nav__button')).find(b => b.textContent.trim().startsWith('Statistics'))",
             )
-            wait_for_expression(session, "Boolean(document.body.textContent.match(/Group statistics/))")
+            wait_for_expression(session, "Boolean(document.body.textContent.match(/Directional group statistics/))")
             self._assert_viewport(session, 320)
             self._assert_no_overflow(session, "statistics and charts")
 
@@ -487,7 +487,7 @@ class ResultBrowserTests(unittest.TestCase):
                 session,
                 "Array.from(document.querySelectorAll('.result-section-nav__button')).find(b => b.textContent.trim().startsWith('Statistics'))",
             )
-            wait_for_expression(session, "Boolean(document.body.textContent.match(/Group statistics/))")
+            wait_for_expression(session, "Boolean(document.body.textContent.match(/Directional group statistics/))")
             session.check_errors()
         finally:
             session.close()
