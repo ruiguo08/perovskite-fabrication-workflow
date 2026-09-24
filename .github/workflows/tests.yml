@@ -1,0 +1,142 @@
+name: Tests
+
+on:
+  pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Re-pushes to the same branch cancel the stale run instead of paying for both.
+# The Windows leg lives in windows.yml so it only runs when asked.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    name: ubuntu-latest / Python 3.14
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: python -m pip install uv==0.12.1
+      - name: Cache uv downloads
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/uv
+            ~\AppData\Local\uv\cache
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+      - run: uv sync --locked --extra test --no-dev --no-editable
+      - run: uv run --no-sync python -m unittest discover -s tests -v
+        env:
+          # The real-Chrome suites run in the frontend job on Linux.
+          PEROVSKITE_SKIP_BROWSER: "0"
+
+  postgresql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: perovskite_test
+          POSTGRES_USER: perovskite_bootstrap
+          POSTGRES_PASSWORD: integration-bootstrap-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U perovskite_bootstrap -d perovskite_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_DB: perovskite_test
+      POSTGRES_USER: perovskite_bootstrap
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGPASSWORD: integration-bootstrap-password
+      PEROVSKITE_MIGRATOR_PASSWORD: integration-migrator-password
+      PEROVSKITE_APP_PASSWORD: integration-runtime-password
+      PEROVSKITE_MIGRATION_DATABASE_URL: postgresql+asyncpg://perovskite_migrator:integration-migrator-password@127.0.0.1:5432/perovskite_test
+      PEROVSKITE_DATABASE_URL: postgresql+asyncpg://perovskite_app:integration-runtime-password@127.0.0.1:5432/perovskite_test
+      PEROVSKITE_TEST_POSTGRESQL_URL: postgresql+asyncpg://perovskite_app:integration-runtime-password@127.0.0.1:5432/perovskite_test
+      PEROVSKITE_ALEMBIC_CONFIG: ${{ github.workspace }}/alembic.ini
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: python -m pip install uv==0.12.1
+      - name: Cache uv downloads
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/uv
+            ~\AppData\Local\uv\cache
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+      - run: uv sync --locked --extra test --no-dev --no-editable
+      - name: Create restricted migration and runtime roles
+        shell: bash
+        run: bash deploy/postgres-init/00-create-application-roles.sh
+      - run: uv run --no-sync alembic upgrade head
+      - run: uv run --no-sync alembic check
+      - name: PostgreSQL integration + release config + behind-head check
+        run: uv run --no-sync python -m unittest tests.test_postgresql_integration tests.test_release_config -v
+
+  frontend:
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: python -m pip install uv==0.12.1
+      - name: Cache uv downloads
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/uv
+            ~\AppData\Local\uv\cache
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+      - run: uv sync --locked --extra test --no-dev --no-editable
+      - name: Install pinned frontend toolchain
+        working-directory: frontend
+        run: corepack enable && corepack pnpm install --frozen-lockfile
+      - name: Typecheck
+        working-directory: frontend
+        run: corepack pnpm typecheck
+      - name: Lint
+        working-directory: frontend
+        run: corepack pnpm lint
+      - name: Unit tests
+        working-directory: frontend
+        run: corepack pnpm test
+      - name: Production build
+        working-directory: frontend
+        run: corepack pnpm build
+      - name: Vite proxy smoke
+        run: PEROVSKITE_VITE_SMOKE=1 uv run --no-sync python -m unittest tests.test_vite_proxy_smoke -v
+      - name: Browser tests (real Chrome)
+        run: uv run --no-sync python -m unittest tests.test_browser_results tests.test_browser_cutover -v
+      - name: Fail if the committed bundle is stale
+        run: git diff --exit-code -- src/web/static-app
+      - name: Build Python wheel
+        run: uv build
+      - name: Installed-wheel smoke test
+        run: uv run --no-sync python -m unittest tests.test_installed_wheel_smoke -v

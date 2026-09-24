@@ -1,0 +1,23 @@
+services:
+  database:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-perovskite_registry}
+      POSTGRES_USER: ${POSTGRES_USER:-perovskite_bootstrap}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set the bootstrap password}
+      PEROVSKITE_MIGRATOR_PASSWORD: ${PEROVSKITE_MIGRATOR_PASSWORD:?set the migration-role password}
+      PEROVSKITE_APP_PASSWORD: ${PEROVSKITE_APP_PASSWORD:?set the runtime-role password}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - perovskite-postgresql:/var/lib/postgresql
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  perovskite-postgresql:

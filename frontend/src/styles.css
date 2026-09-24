@@ -1,0 +1,9 @@
+/* Perovskite Solar Cell Fabrication Workflow — component styles.
+   Entry file; modules below are imported in cascade order. Design intent:
+   desktop-first lab console — porcelain surface, graphite text, steel rules,
+   ITO cyan for active/process, perovskite violet for planned/configuration,
+   amber for warnings/review, restrained red for destructive/error. */
+@import "./styles/tokens.css";
+@import "./styles/base.css";
+@import "./styles/screens.css";
+@import "./styles/run-sheet.css";

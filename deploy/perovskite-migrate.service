@@ -1,0 +1,27 @@
+[Unit]
+Description=Apply reviewed Perovskite database migrations
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=perovskite-migrator
+Group=perovskite
+WorkingDirectory=/opt/perovskite
+EnvironmentFile=/etc/perovskite/perovskite-migrator.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PEROVSKITE_ALEMBIC_CONFIG=/opt/perovskite/alembic.ini
+ExecStart=/opt/perovskite/.venv/bin/alembic -c /opt/perovskite/alembic.ini upgrade head
+ExecStartPost=/opt/perovskite/.venv/bin/alembic -c /opt/perovskite/alembic.ini current
+ExecStartPost=/opt/perovskite/.venv/bin/alembic -c /opt/perovskite/alembic.ini check
+RemainAfterExit=yes
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

@@ -1,0 +1,159 @@
+/* Perovskite Solar Cell Fabrication Workflow — design tokens and component styles.
+   Desktop-first lab console: porcelain surface, graphite text, steel rules,
+   ITO cyan for active/process, perovskite violet for planned/configuration,
+   amber for warnings/review, restrained red for destructive/error. */
+
+/* Self-hosted IBM Plex (SIL OFL 1.1 — see src/assets/fonts/LICENSE-OFL.txt).
+   The brand stack in --font-ui/--font-mono resolves to these files; CSP already
+   allows font-src 'self'. font-display: swap keeps first paint on the fallback. */
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/IBMPlexSans-Regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../assets/fonts/IBMPlexSans-Medium.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../assets/fonts/IBMPlexSans-SemiBold.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/IBMPlexMono-Regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../assets/fonts/IBMPlexMono-Medium.woff2") format("woff2");
+}
+
+:root {
+  --porcelain: #f4f7f7;
+  --surface: #ffffff;
+  --graphite: #172126;
+  --steel: #53656d;
+  --steel-soft: #9aacb3;
+  --border: #d4dde0;
+  --border-strong: #b9c6cb;
+  --ito: #168a9d;
+  --ito-strong: #0f6d7d;
+  --perovskite: #6852b8;
+  --amber: #b66a00;
+  --amber-soft: #fdf3e6;
+  --danger: #b3261e;
+  --danger-soft: #fbeceb;
+  --success: #1e7a4d;
+  --success-soft: #e9f5ef;
+  --planned-soft: #f0ecfa;
+  --active-soft: #e6f4f6;
+  --graphite-raised: #24343b;
+  --neutral-soft: #eef1f2;
+  --active-border: #b7dde4;
+  --planned-border: #d4cbec;
+  --amber-border: #ecd3ae;
+  --danger-border: #ecc9c6;
+  --success-border: #bfe0d0;
+
+  --font-ui:
+    "IBM Plex Sans", "Noto Sans SC", system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  --font-mono:
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    monospace;
+
+  --radius: 4px;
+  --radius-lg: 8px;
+
+  /* Spacing rhythm (8px grid). */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* Type scale. --text-xs is reserved for uppercase eyebrows and index glyphs. */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 19px;
+  --text-2xl: 24px;
+
+  /* Elevation (MUI-style restrained shadows). */
+  --shadow-1: 0 1px 2px rgba(23, 33, 38, 0.05), 0 1px 3px rgba(23, 33, 38, 0.04);
+  --shadow-2: 0 2px 8px rgba(23, 33, 38, 0.08), 0 1px 2px rgba(23, 33, 38, 0.04);
+  --shadow-3: 0 8px 24px rgba(23, 33, 38, 0.2);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--porcelain);
+  color: var(--graphite);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+code,
+pre,
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+:focus-visible {
+  /* outline (not box-shadow) survives overflow containers such as .table-scroll */
+  outline: 2px solid var(--ito);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+

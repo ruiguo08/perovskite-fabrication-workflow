@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Perovskite expired-session cleanup
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+Unit=perovskite-session-cleanup.service
+
+[Install]
+WantedBy=timers.target

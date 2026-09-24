@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.run/
+.claude/
+.env
+deploy/*.env
+experiments.sqlite3
+demo-preview.sqlite3
+.zcode/
+.worktrees/
+
+# Local worktrees
+.worktrees/
+
+# Real laboratory fabrication records kept for internal reference only —
+# never commit; the public repository must not contain real setpoints.
+docs/test-data/
+/node_modules/

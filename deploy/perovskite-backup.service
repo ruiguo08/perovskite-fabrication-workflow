@@ -1,0 +1,17 @@
+[Unit]
+Description=Perovskite PostgreSQL logical backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/perovskite/postgresql.env
+EnvironmentFile=/etc/perovskite/perovskite-backup.env
+ExecStart=/opt/perovskite/deploy/backup-postgresql.sh
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full

@@ -1,0 +1,13 @@
+# Copy this file to /etc/caddy/Caddyfile and replace this placeholder with the
+# stable office DNS name. `tls internal` requires clients to trust Caddy's
+# local root certificate.
+https://perovskite.lab.example {
+    tls internal
+    encode zstd gzip
+
+    request_body {
+        max_size 12MB
+    }
+
+    reverse_proxy 127.0.0.1:8000
+}

@@ -1,0 +1,53 @@
+name: Windows validation
+
+# Windows runner minutes bill at 2x on private repositories, so this leg does
+# NOT run on every PR push. It is a pre-merge check: add the `run-windows-ci`
+# label to the PR to validate the current head on Windows. `pull_request` runs
+# in the PR's merge-commit context, so this file (defined on the PR branch) is
+# the version executed when the label is added.
+#
+# While the label is present, later pushes to the PR also re-run this leg, so
+# the commit you actually merge stays the one Windows checked. Remove the label
+# to stop the re-runs. "Green on Windows before merging" is therefore a review
+# convention here, not a platform-enforced gate: this private repo has no
+# required-status-check protection.
+on:
+  # `labeled` fires when the label is added; `synchronize` fires on new pushes,
+  # and the `if` below re-checks the label so pushes only run when it is present.
+  pull_request:
+    types: [labeled, synchronize]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unittest-windows:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'run-windows-ci')
+    runs-on: windows-latest
+    name: windows-latest / Python 3.14
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: python -m pip install uv==0.12.1
+      - name: Cache uv downloads
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/uv
+            ~\AppData\Local\uv\cache
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+      - run: uv sync --locked --extra test --no-dev --no-editable
+      - run: uv run --no-sync python -m unittest discover -s tests -v
+        env:
+          # The real-Chrome suites run in the frontend job on Linux; skipping
+          # them here cuts the Windows job roughly in half.
+          PEROVSKITE_SKIP_BROWSER: "1"

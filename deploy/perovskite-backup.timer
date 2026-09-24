@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Perovskite PostgreSQL logical backup
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+Persistent=true
+Unit=perovskite-backup.service
+
+[Install]
+WantedBy=timers.target

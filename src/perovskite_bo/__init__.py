@@ -1,0 +1,72 @@
+"""Compatibility and future optimization helpers for the fabrication workflow."""
+
+from .device_recipe import (
+    DEVICE_RECIPE_SCHEMA_VERSION,
+    MAX_SOLID_CHEMICALS,
+    MAX_SOLVENTS,
+    PerovskiteDepositionProcess,
+    VCD_VALVES,
+    blank_device_recipe,
+    deposition_recipe_from_process,
+    device_stack_label,
+    normalize_device_recipe,
+    validate_deposition_process,
+    validate_device_recipe,
+)
+from .fabrication import (
+    DEFAULT_FABRICATION_BASELINE_ID,
+    FABRICATION_SCHEMA_VERSION,
+    FABRICATION_BASELINES,
+    FABRICATION_FIELDS,
+    FABRICATION_SECTIONS,
+    FabricationField,
+    FabricationSection,
+    PRECURSOR_SOLVENTS,
+    coerce_fabrication_value,
+    default_fabrication_context,
+    fabrication_overrides,
+    get_fabrication_baseline,
+    resolve_fabrication_context,
+)
+from .recipe import DEVICE_STACKS, DepositionRecipe
+from .records import ExperimentRecord, ExperimentStatus
+from .search_space import ChoiceParameter, FloatParameter, IntegerParameter, SearchSpace
+from .strategies import BayesianStrategy, RandomStrategy, SuggestionStrategy
+
+__all__ = [
+    "BayesianStrategy",
+    "ChoiceParameter",
+    "DEFAULT_FABRICATION_BASELINE_ID",
+    "DEVICE_RECIPE_SCHEMA_VERSION",
+    "DEVICE_STACKS",
+    "DepositionRecipe",
+    "ExperimentRecord",
+    "ExperimentStatus",
+    "FABRICATION_BASELINES",
+    "FABRICATION_FIELDS",
+    "FABRICATION_SCHEMA_VERSION",
+    "FABRICATION_SECTIONS",
+    "FloatParameter",
+    "FabricationField",
+    "FabricationSection",
+    "IntegerParameter",
+    "MAX_SOLID_CHEMICALS",
+    "MAX_SOLVENTS",
+    "PRECURSOR_SOLVENTS",
+    "PerovskiteDepositionProcess",
+    "RandomStrategy",
+    "SearchSpace",
+    "SuggestionStrategy",
+    "VCD_VALVES",
+    "blank_device_recipe",
+    "coerce_fabrication_value",
+    "default_fabrication_context",
+    "deposition_recipe_from_process",
+    "device_stack_label",
+    "fabrication_overrides",
+    "get_fabrication_baseline",
+    "normalize_device_recipe",
+    "resolve_fabrication_context",
+    "validate_deposition_process",
+    "validate_device_recipe",
+]

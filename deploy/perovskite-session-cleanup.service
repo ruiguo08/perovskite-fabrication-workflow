@@ -1,0 +1,23 @@
+[Unit]
+Description=Perovskite expired-session cleanup
+
+[Service]
+Type=oneshot
+User=perovskite
+Group=perovskite
+WorkingDirectory=/opt/perovskite
+EnvironmentFile=/etc/perovskite/perovskite.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PEROVSKITE_ALEMBIC_CONFIG=/opt/perovskite/alembic.ini
+ExecStartPre=/opt/perovskite/.venv/bin/perovskite-workflow-admin check-database
+ExecStart=/opt/perovskite/.venv/bin/perovskite-workflow-admin cleanup-sessions
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
