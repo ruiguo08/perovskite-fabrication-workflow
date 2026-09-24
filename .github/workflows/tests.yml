@@ -2,6 +2,7 @@ name: Tests
 
 on:
   pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
   push:
     branches: [main]
   workflow_dispatch:
@@ -9,7 +10,7 @@ on:
 permissions:
   contents: read
 
-# Re-pushes to the same branch cancel the stale run instead of paying for both.
+# New commits cancel superseded runs for the same branch or PR.
 # Windows validation runs separately in windows.yml on PRs and main pushes.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -17,6 +18,7 @@ concurrency:
 
 jobs:
   unittest:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     name: ubuntu-latest / Python 3.14
     steps:
@@ -39,6 +41,7 @@ jobs:
           PEROVSKITE_SKIP_BROWSER: "0"
 
   postgresql:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -89,6 +92,7 @@ jobs:
         run: uv run --no-sync python -m unittest tests.test_postgresql_integration tests.test_release_config -v
 
   frontend:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     env:
       CI: "true"
