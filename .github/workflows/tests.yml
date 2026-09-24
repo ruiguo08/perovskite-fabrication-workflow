@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 # Re-pushes to the same branch cancel the stale run instead of paying for both.
-# The Windows leg lives in windows.yml so it only runs when asked.
+# Windows validation runs separately in windows.yml on PRs and main pushes.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

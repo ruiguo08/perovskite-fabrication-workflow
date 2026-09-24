@@ -1,21 +1,9 @@
 name: Windows validation
 
-# Windows runner minutes bill at 2x on private repositories, so this leg does
-# NOT run on every PR push. It is a pre-merge check: add the `run-windows-ci`
-# label to the PR to validate the current head on Windows. `pull_request` runs
-# in the PR's merge-commit context, so this file (defined on the PR branch) is
-# the version executed when the label is added.
-#
-# While the label is present, later pushes to the PR also re-run this leg, so
-# the commit you actually merge stays the one Windows checked. Remove the label
-# to stop the re-runs. "Green on Windows before merging" is therefore a review
-# convention here, not a platform-enforced gate: this private repo has no
-# required-status-check protection.
 on:
-  # `labeled` fires when the label is added; `synchronize` fires on new pushes,
-  # and the `if` below re-checks the label so pushes only run when it is present.
   pull_request:
-    types: [labeled, synchronize]
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -27,9 +15,6 @@ concurrency:
 
 jobs:
   unittest-windows:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      contains(github.event.pull_request.labels.*.name, 'run-windows-ci')
     runs-on: windows-latest
     name: windows-latest / Python 3.14
     steps:
