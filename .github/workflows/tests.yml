@@ -2,14 +2,8 @@ name: Tests
 
 on:
   pull_request:
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
   push:
     branches: [main]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
   workflow_dispatch:
 
 permissions:
