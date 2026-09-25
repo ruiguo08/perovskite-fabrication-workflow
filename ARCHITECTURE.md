@@ -2,23 +2,27 @@
 
 The active web application is an experiment registry. It records the exact setup used for each perovskite experiment and associates that snapshot with its characterization results.
 
+![Architecture overview](docs/architecture/system-architecture.png)
+
+[Download the interactive Archify diagram](docs/architecture/system-architecture.html) and open it locally, or inspect its [source specification](docs/architecture/system-architecture.json).
+
 Optimization code remains available as an optional future consumer of the stored data, but it does not validate, constrain, or generate records in the current web workflow.
 
 ## Dependency Direction
 
 ~~~
-Browser
-  ↓
-FastAPI routes and guided builder (src/web)
-  ↓
-Canonical recipe validation (src/perovskite_bo)
+React browser app (frontend/src)
+  ↓ HTTP/JSON
+FastAPI routes (src/web/routes)
+  ↓ state-changing use cases
+Application operations and canonical recipe validation
   ↓
 Async SQLAlchemy repository
   ↓
 PostgreSQL registry, sessions, uploads, and audit log
 ~~~
 
-The core package must not import the web package.
+Result routes also use the J-V CSV parser and publication-figure renderer. Read-only routes may query the repository directly. The core `perovskite_bo` package must not import the web package.
 
 ## Module Responsibilities (application-operations layering)
 
@@ -152,14 +156,14 @@ The `result_files` table contains:
 - per-trace instrument-local measurement timestamps and the server upload timestamp;
 - SHA-256 integrity digest and creating user.
 
-Uploads are bounded before persistence. If experiment completion is rejected, the newly inserted file is removed.
+Uploads are bounded before persistence. Uploading a result does not automatically complete the experiment.
 
 ## Setup Capture Flow
 
 ~~~
 Instructor-created active Campaign
   ↓
-Saved immutable Baseline revision
+Optional immutable Baseline revision or a recipe created from scratch
   ↓
 Comparative plan (control + targets) or standalone plan
   ↓
@@ -170,18 +174,14 @@ Complete independent condition snapshots
   ├── canonical recipe hash
   └── layout snapshot and expected device count
   ↓
-device_recipe_json + deposition_process_json + condition_plans_json
+React builder submits recipe + condition_plans to POST /api/experiments
   ↓
-web.forms.recipe_from_form
-  ├── validate complete DeviceRecipe
-  └── flatten perovskite process fields
+RecipePayload and DepositionRecipe validate the complete recipe
   ↓
-DepositionRecipe.from_mapping
-  ↓
-WebRepository.add_experiment → validated experiment_conditions
+WebRepository.add_experiment materializes validated experiment_conditions
 ~~~
 
-The browser's `condition_plans_json` supplies the explicit layout and planned substrate count for every group. UI-only layout metadata is removed from `device_recipe_json` before canonical DeviceRecipe validation. The production experiment API requires a complete `device_recipe`; repository persistence rejects flat process-only recipes and requires at least one materialized condition. Ambiguous free-text-only target adjustments remain blocked behind manual review.
+The builder submits `condition_plans` with the explicit layout and planned substrate count for every group. The production experiment API requires a complete `device_recipe`; repository persistence rejects flat process-only recipes and requires at least one materialized condition. Ambiguous free-text-only target adjustments remain blocked behind manual review.
 
 ## Fabrication Batch Execution
 
@@ -278,16 +278,20 @@ Every structurally valid draft must pass through pending approval to approved be
 ## Result Flow
 
 ~~~
-Bounded single-curve or multi-device JV CSV upload
+Authorize the selected fabrication batch and accept a bounded J-V CSV
   ↓
-Group traces by physical-device label; parse Voc, Jsc, FF, and PCE; summarize batches
+Parse traces, per-direction device metrics, and instrument metric provenance
   ↓
-Validate extension, media type, filename, NUL bytes, and bounded size
+Persist raw bytes, analysis, uploader, and digest in result_files
   ↓
-Persist raw bytes and digest atomically in result_files
+Assign every parsed substrate to a frozen batch condition
   ↓
-Complete the experiment in the same transaction
+Save assignments and device exclusions with an audit record
+  ↓
+Calculate directional group statistics and render J-V, distribution, and uniformity figures
 ~~~
+
+The upload does not complete the experiment automatically. Statistics and substrate uniformity require complete substrate assignments; J-V curves remain available before that step. Device exclusions affect the filtered statistics, distributions, and uniformity view, while all parsed J-V traces remain available. See [Result analysis](docs/result-analysis.md) for the exact analysis scope and metric selection rules.
 
 ## Design Constraints
 
@@ -317,4 +321,4 @@ Complete the experiment in the same transaction
 - structured result export;
 - instrument-specific parsers;
 - optional analytical and Bayesian-optimization consumers;
-- browser-level end-to-end tests.
+- broader browser-level end-to-end coverage.
