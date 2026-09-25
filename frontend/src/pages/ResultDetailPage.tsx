@@ -29,8 +29,7 @@ const METRIC_META: { name: "voc" | "jsc" | "ff" | "pce"; label: string }[] = [
   { name: "pce", label: "PCE (%)" },
 ];
 
-type ResultSection = "figures" | "statistics" | "assignments" | "records";
-type FigureSection = "jv" | "uniformity" | "distributions";
+type ResultSection = "assignments" | "statistics" | "jv" | "uniformity" | "records";
 const CATEGORICAL_PALETTES = [
   ["nature-classic", "Nature Classic"], ["science-tol", "Science / Paul Tol"],
   ["lancet-clinical", "Lancet Clinical"], ["nejm", "NEJM Palette"],
@@ -44,7 +43,12 @@ const GRADIENT_PALETTES = [
   ["rainbow", "Rainbow red-to-blue"],
 ] as const;
 
-function FigureScopePair({ resultId, kind, metric, direction, excludedDeviceIds, revision, alt, palette, scale }: {
+function changedEntries<K, V>(draft: Map<K, V>, saved: Map<K, V>): number {
+  return [...new Set([...draft.keys(), ...saved.keys()])]
+    .filter((key) => draft.get(key) !== saved.get(key)).length;
+}
+
+function FigureScopePair({ resultId, kind, metric, direction, excludedDeviceIds, revision, alt, palette, scale, filteredPreview }: {
   resultId: number;
   kind: "uniformity" | "boxplot";
   metric: "voc" | "jsc" | "ff" | "pce";
@@ -54,16 +58,19 @@ function FigureScopePair({ resultId, kind, metric, direction, excludedDeviceIds,
   alt: string;
   palette: string;
   scale?: FigureColorScale;
+  filteredPreview?: boolean;
 }) {
   return <div className="figure-scope-pair">
     {([
       { label: "All devices", excludedIds: [] },
       { label: `Exclude flagged devices (${excludedDeviceIds.length})`, excludedIds: excludedDeviceIds },
-    ]).map(({ label, excludedIds }) =>
+    ]).map(({ label, excludedIds }, index) =>
       <div key={label} className="figure-scope-pair__item" role="group" aria-label={label}>
-        <h3>{label}</h3>
+        <h3>{label}{index === 1 && filteredPreview ? <span className="analysis-preview-label">Unsaved preview</span> : null}</h3>
         <PublicationFigure resultId={resultId} kind={kind} metric={metric} direction={direction}
-          excludedDeviceIds={excludedIds} revision={revision} palette={palette} scale={scale} alt={`${alt} · ${label}`} />
+          excludedDeviceIds={excludedIds} revision={revision} palette={palette} scale={scale}
+          flaggedDeviceIds={kind === "uniformity" && index === 0 ? excludedDeviceIds : []}
+          downloadEnabled={index === 0 || !filteredPreview} alt={`${alt} · ${label}`} />
       </div>)}
   </div>;
 }
@@ -316,8 +323,7 @@ export function ResultDetailPage() {
   const [uniformityScaleError, setUniformityScaleError] = useState<string | null>(null);
   const [assignmentExpanded, setAssignmentExpanded] = useState(true);
   const [activeSection, setActiveSection] = useState<ResultSection>("assignments");
-  const [figuresVisited, setFiguresVisited] = useState(false);
-  const [figureSection, setFigureSection] = useState<FigureSection>("jv");
+  const [jvVisited, setJvVisited] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const detail = localDetail ?? serverDetail;
@@ -350,8 +356,7 @@ export function ResultDetailPage() {
     setUniformityScaleError(null);
     setAssignmentExpanded(true);
     setActiveSection("assignments");
-    setFiguresVisited(false);
-    setFigureSection("jv");
+    setJvVisited(false);
     setSubmitting(false);
     setError(null);
     return () => {
@@ -397,6 +402,26 @@ export function ResultDetailPage() {
     () => directionalGroupStatistics(devices, groups, new Set(exclusions.keys())),
     [devices, groups, exclusions],
   );
+  const savedAssignments = useMemo(() => new Map(substrates
+    .filter((substrate) => substrate.batch_condition_id !== undefined)
+    .map((substrate) => [substrate.substrate_id, substrate.batch_condition_id!] as const)), [substrates]);
+  const savedExclusions = useMemo(() => new Map(devices
+    .filter((device) => device.excluded)
+    .map((device) => [device.device_id, device.exclusion_reason ?? ""] as const)), [devices]);
+  const assignmentChangeCount = changedEntries(assignments, savedAssignments);
+  const exclusionChangeCount = changedEntries(exclusions, savedExclusions);
+  const draftDirty = prefilledDetailRef.current === activeDetail &&
+    (assignmentChangeCount > 0 || exclusionChangeCount > 0);
+
+  useEffect(() => {
+    if (!draftDirty) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [draftDirty]);
   // Saved assignment provenance comes straight from the detail response, which
   // the backend builds with the same rows as GET /api/results/{id}/assignments.
   // Using it directly removes a same-route GET/POST race where a stale secondary
@@ -479,6 +504,12 @@ export function ResultDetailPage() {
       }
       return next;
     });
+  }
+
+  function discardChanges() {
+    setAssignments(new Map(savedAssignments));
+    setExclusions(new Map(savedExclusions));
+    setError(null);
   }
 
   function applyUniformityScale(event: FormEvent<HTMLFormElement>) {
@@ -610,6 +641,25 @@ export function ResultDetailPage() {
           </>
         }
       />
+      {draftDirty ? <div className="analysis-preview-banner" role="status" aria-label="Unsaved analysis preview">
+        <div>
+          <strong>Unsaved analysis preview</strong>
+          <span>{[
+            assignmentChangeCount ? `${assignmentChangeCount} assignment change${assignmentChangeCount === 1 ? "" : "s"}` : "",
+            exclusionChangeCount ? `${exclusionChangeCount} exclusion change${exclusionChangeCount === 1 ? "" : "s"}` : "",
+          ].filter(Boolean).join(" · ")} · {exclusionChangeCount
+            ? "Statistics and filtered figures preview your exclusion selection."
+            : "Assignment changes take effect after saving."}{assignmentChangeCount && exclusionChangeCount
+            ? " Assignment changes take effect after saving."
+            : ""}</span>
+        </div>
+        <div className="button-row">
+          <button className="button button--primary button--small" type="submit" form="result-assignment-form" disabled={!allAssigned || submitting}>
+            {submitting ? "Saving…" : "Save changes"}
+          </button>
+          <button className="button button--secondary button--small" type="button" onClick={discardChanges}>Discard changes</button>
+        </div>
+      </div> : null}
 
       {analysisWarnings.length > 0 ? (
         <div className="analysis-warnings" role="alert">
@@ -653,15 +703,16 @@ export function ResultDetailPage() {
         {([
           ["assignments", "Assignments"],
           ["statistics", "Statistics"],
-          ["figures", "Figures"],
+          ["jv", "J–V curves"],
+          ["uniformity", "Uniformity"],
           ["records", "Data & provenance"],
         ] as const).map(([section, label]) => (
           <button key={section} type="button"
             className={`result-section-nav__button${activeSection === section ? " result-section-nav__button--active" : ""}`}
             aria-pressed={activeSection === section}
-            disabled={section === "statistics" && !statisticsPresent}
+            disabled={(section === "statistics" || section === "uniformity") && !statisticsPresent}
             onClick={() => {
-              if (section === "figures") setFiguresVisited(true);
+              if (section === "jv") setJvVisited(true);
               setActiveSection(section);
             }}>
             {label}
@@ -669,22 +720,6 @@ export function ResultDetailPage() {
           </button>
         ))}
       </nav>
-
-      {activeSection === "figures" ? (
-        <nav className="result-figure-nav" aria-label="Figure types">
-          {([
-            ["jv", "J–V curves"],
-            ["uniformity", "Uniformity"],
-            ["distributions", "Distributions"],
-          ] as const).map(([section, label]) => (
-            <button key={section} type="button"
-              className={`result-figure-nav__button${figureSection === section ? " result-figure-nav__button--active" : ""}`}
-              aria-pressed={figureSection === section}
-              disabled={section !== "jv" && !statisticsPresent}
-              onClick={() => setFigureSection(section)}>{label}</button>
-          ))}
-        </nav>
-      ) : null}
 
       {activeSection === "records" ? <>
       <section className="panel" aria-labelledby="result-meta-title">
@@ -785,10 +820,10 @@ export function ResultDetailPage() {
       </details>
       </> : null}
 
-      {figuresVisited ? <div hidden={activeSection !== "figures" || figureSection !== "jv"}>
+      {jvVisited ? <div hidden={activeSection !== "jv"}>
         <JvChart key={resultIdNumber} resultId={resultIdNumber} devices={devices} groups={groups} figureRevision={figureRevision} />
       </div> : null}
-      {activeSection === "figures" && figureSection === "uniformity" ? (
+      {activeSection === "uniformity" && statisticsPresent ? (
       <section className="panel" aria-labelledby="uniformity-title">
         <div className="panel__heading">
           <h2 className="panel__title" id="uniformity-title">Publication substrate uniformity</h2>
@@ -829,7 +864,7 @@ export function ResultDetailPage() {
         </form>
         <p className="run-sheet-muted">Values use the selected metric's unit. Blank bounds use the automatic range. The threshold marks the color scale midpoint; with RdYlGn, values below it are red/yellow and values above it are green. Both device scopes share the scale. For diverging red-blue, white marks the threshold when set; otherwise it marks the all-device median if within range, or the selected range midpoint. Color bar ticks and cell numbers show the measured metric.</p>
         <FigureScopePair resultId={resultIdNumber} kind="uniformity" metric={uniformityMetric} direction={uniformityDirection}
-          excludedDeviceIds={[...exclusions.keys()]} revision={figureRevision} palette={uniformityPalette} scale={uniformityScale}
+          excludedDeviceIds={[...exclusions.keys()]} revision={figureRevision} palette={uniformityPalette} scale={uniformityScale} filteredPreview={exclusionChangeCount > 0}
           alt={`Publication substrate uniformity for ${uniformityMetric}, ${uniformityDirection} scan`} />
       </section>
       ) : null}
@@ -876,7 +911,7 @@ export function ResultDetailPage() {
           </section>
       ) : null}
 
-      {statisticsPresent && activeSection === "figures" && figureSection === "distributions" ? (
+      {statisticsPresent && activeSection === "statistics" ? (
           <section className="panel" aria-labelledby="boxplot-title">
             <div className="panel__heading">
               <h2 className="panel__title" id="boxplot-title">Metric distributions</h2>
@@ -891,7 +926,7 @@ export function ResultDetailPage() {
             </div>
             <p className="run-sheet-muted">Forward and reverse scans are separate (F/R). Both device scopes use the current exclusion selection.</p>
             <FigureScopePair resultId={resultIdNumber} kind="boxplot" metric={distributionMetric}
-              excludedDeviceIds={[...exclusions.keys()]} revision={figureRevision} palette={distributionPalette}
+              excludedDeviceIds={[...exclusions.keys()]} revision={figureRevision} palette={distributionPalette} filteredPreview={exclusionChangeCount > 0}
               alt={`${METRIC_META.find((metric) => metric.name === distributionMetric)?.label} publication box plot with device points, split by scan direction`}
             />
           </section>

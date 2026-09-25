@@ -84,7 +84,7 @@ function openSection(name: string) {
 }
 
 function openFigure(name: string) {
-  fireEvent.click(within(screen.getByRole("navigation", { name: "Figure types" })).getByRole("button", { name: new RegExp(name, "i") }));
+  openSection(name === "Distributions" ? "Statistics" : name);
 }
 
 function openExclusions() {
@@ -107,6 +107,18 @@ describe("ResultDetailPage", () => {
       }
       return undefined;
     });
+  });
+
+  it("keeps raw J–V scans available before assignments while statistical views wait", async () => {
+    await renderReadyDetail();
+    const sections = within(screen.getByRole("navigation", { name: "Result sections" }));
+    expect(sections.getAllByRole("button").map((button) => button.textContent?.trim())).toEqual([
+      "Assignments0/2", "Statistics", "J–V curves", "Uniformity", "Data & provenance",
+    ]);
+    expect(sections.getByRole("button", { name: "Statistics" })).toBeDisabled();
+    expect(sections.getByRole("button", { name: "Uniformity" })).toBeDisabled();
+    fireEvent.click(sections.getByRole("button", { name: "J–V curves" }));
+    expect(screen.getByRole("heading", { name: "Publication J–V curves" })).toBeInTheDocument();
   });
 
   it("shows the header with integrity metadata and provenance", async () => {
@@ -160,7 +172,7 @@ describe("ResultDetailPage", () => {
     expect(screen.getByRole("button", { name: /Save assignments/i })).toBeEnabled();
   });
 
-  it("shows one result section and one figure type at a time", async () => {
+  it("shows one result section at a time", async () => {
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === "/api/results/42") {
         const detail = makeDetail();
@@ -171,12 +183,12 @@ describe("ResultDetailPage", () => {
     });
     await renderReadyDetail();
     expect(within(screen.getByRole("navigation", { name: "Result sections" })).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual([
-      "Assignments0/2", "Statistics", "Figures", "Data & provenance",
+      "Assignments0/2", "Statistics", "J–V curves", "Uniformity", "Data & provenance",
     ]);
     expect(within(screen.getByRole("navigation", { name: "Result sections" })).getByRole("button", { name: /Assignments/i }))
       .toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByRole("heading", { name: "Publication substrate uniformity" })).not.toBeInTheDocument();
-    openSection("Figures");
+    openSection("J–V curves");
     expect(screen.getByRole("heading", { name: "Publication J–V curves" })).toBeInTheDocument();
     openFigure("Uniformity");
     expect(screen.getByRole("heading", { name: "Publication substrate uniformity" })).toBeInTheDocument();
@@ -188,7 +200,7 @@ describe("ResultDetailPage", () => {
 
   it("keeps the J–V device selection when switching figure types", async () => {
     await renderReadyDetail();
-    openSection("Figures");
+    openSection("J–V curves");
     fireEvent.click(screen.getByText("Choose devices (0 selected)"));
     fireEvent.click(screen.getByLabelText("Choose device device-sample-1-1"));
     expect(screen.getByText("Choose devices (1 selected)")).toBeInTheDocument();
@@ -199,11 +211,11 @@ describe("ResultDetailPage", () => {
 
   it("keeps the J–V device selection when visiting another result section", async () => {
     await renderReadyDetail();
-    openSection("Figures");
+    openSection("J–V curves");
     fireEvent.click(screen.getByText("Choose devices (0 selected)"));
     fireEvent.click(screen.getByLabelText("Choose device device-sample-1-1"));
     openSection("Data & provenance");
-    openSection("Figures");
+    openSection("J–V curves");
     expect(screen.getByText("Choose devices (1 selected)")).toBeInTheDocument();
   });
 
@@ -219,7 +231,7 @@ describe("ResultDetailPage", () => {
     await renderReadyDetail();
     expect(within(screen.getByRole("navigation", { name: "Result sections" })).getByRole("button", { name: /Assignments/i }))
       .toHaveAttribute("aria-pressed", "true");
-    openSection("Figures");
+    openSection("J–V curves");
     expect(screen.getByRole("heading", { name: "Publication J–V curves" })).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: /publication box plot/i })).not.toBeInTheDocument();
     openFigure("Distributions");
@@ -287,7 +299,7 @@ describe("ResultDetailPage", () => {
       return undefined;
     });
     await renderReadyDetail();
-    openSection("Figures");
+    openSection("J–V curves");
     openFigure("Uniformity");
     const section = screen.getByRole("heading", { name: "Publication substrate uniformity" }).closest("section")!;
     expect(within(section).getAllByRole("img")).toHaveLength(2);
@@ -320,7 +332,7 @@ describe("ResultDetailPage", () => {
       return undefined;
     });
     await renderReadyDetail();
-    openSection("Figures");
+    openSection("J–V curves");
     openFigure("Distributions");
     const section = screen.getByRole("heading", { name: "Metric distributions" }).closest("section")!;
     fireEvent.change(within(section).getByLabelText("Color palette"), { target: { value: "science-tol" } });
@@ -342,7 +354,7 @@ describe("ResultDetailPage", () => {
       return undefined;
     });
     await renderReadyDetail();
-    openSection("Figures");
+    openSection("J–V curves");
     openFigure("Uniformity");
     const section = screen.getByRole("heading", { name: "Publication substrate uniformity" }).closest("section")!;
     fireEvent.change(within(section).getByLabelText("Metric"), { target: { value: "voc" } });
@@ -372,9 +384,9 @@ describe("ResultDetailPage", () => {
 
   it("requires saved assignments before opening statistical figures", async () => {
     await renderReadyDetail();
-    openSection("Figures");
+    openSection("J–V curves");
     expect(screen.getByRole("button", { name: "Uniformity" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Distributions" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Statistics" })).toBeDisabled();
   });
 
   it("shows both uniformity scopes with separate figure downloads", async () => {
@@ -389,11 +401,12 @@ describe("ResultDetailPage", () => {
       return undefined;
     });
     await renderReadyDetail();
-    openSection("Figures");
+    openSection("J–V curves");
     openFigure("Uniformity");
     const all = screen.getByRole("group", { name: "All devices" });
     const filtered = screen.getByRole("group", { name: /Exclude flagged devices \(1\)/i });
     expect(within(all).getByRole("img")).toHaveAttribute("src", expect.stringContaining("preview_exclusions=true"));
+    expect(within(all).getByRole("img")).toHaveAttribute("src", expect.stringContaining("flagged_device_id=device-sample-1-1"));
     expect(within(all).getByRole("img")).not.toHaveAttribute("src", expect.stringContaining("excluded_device_id="));
     expect(within(filtered).getByRole("img")).toHaveAttribute("src", expect.stringContaining("excluded_device_id=device-sample-1-1"));
     expect(within(all).getByRole("link", { name: "SVG" })).not.toHaveAttribute("href", expect.stringContaining("excluded_device_id="));
@@ -415,7 +428,7 @@ describe("ResultDetailPage", () => {
       return undefined;
     });
     await renderReadyDetail();
-    openSection("Figures");
+    openSection("J–V curves");
     openFigure("Uniformity");
     const uniformityBefore = within(screen.getByRole("group", { name: "All devices" })).getByRole("img").getAttribute("src");
     openSection("Assignments");
@@ -425,7 +438,7 @@ describe("ResultDetailPage", () => {
     fireEvent.change(selects[1], { target: { value: "22" } });
     fireEvent.click(screen.getByRole("button", { name: /Save assignments/i }));
     await waitFor(() => expect(screen.getByRole("button", { name: /Statistics/i })).toHaveAttribute("aria-pressed", "true"));
-    openSection("Figures");
+    openSection("Uniformity");
     expect(within(screen.getByRole("group", { name: "All devices" })).getByRole("img").getAttribute("src")).not.toBe(uniformityBefore);
     openSection("Assignments");
     const edit = await screen.findByRole("button", { name: /Edit assignments/i });
@@ -475,6 +488,29 @@ describe("ResultDetailPage", () => {
     expect(screen.getByRole("button", { name: "Save condition and exclusion changes" })).toBeInTheDocument();
   });
 
+  it("labels pending exclusions across sections and holds filtered exports until save", async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === "/api/results/42") {
+        const detail = makeDetail();
+        (detail.analysis as Record<string, unknown>).statistics = { groups: [], comparisons: [] };
+        return detail;
+      }
+      return undefined;
+    });
+    await renderReadyDetail();
+    openExclusions();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Exclude device-sample-1-1" }));
+    expect(screen.getByRole("status", { name: "Unsaved analysis preview" })).toHaveTextContent("1 exclusion change");
+    openSection("Uniformity");
+    expect(screen.getByRole("status", { name: "Unsaved analysis preview" })).toBeInTheDocument();
+    const filtered = screen.getByRole("group", { name: /Exclude flagged devices \(1\)/i });
+    expect(within(filtered).getByRole("button", { name: "SVG" })).toBeDisabled();
+    expect(within(screen.getByRole("group", { name: "All devices" })).getByRole("link", { name: "SVG" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(screen.queryByRole("status", { name: "Unsaved analysis preview" })).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: /Exclude flagged devices \(0\)/i })).toBeInTheDocument();
+  });
+
   it("updates publication box plots from the pending exclusion selection", async () => {
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === "/api/results/42") {
@@ -492,14 +528,14 @@ describe("ResultDetailPage", () => {
       return undefined;
     });
     await renderReadyDetail();
-    openSection("Figures");
+    openSection("J–V curves");
     openFigure("Distributions");
     const boxplot = within(screen.getByRole("group", { name: "All devices" })).getByRole("img", { name: /PCE .*publication box plot/i });
     expect(boxplot).toHaveAttribute("src", expect.stringContaining("preview_exclusions=true"));
     openSection("Assignments");
     openExclusions();
     fireEvent.click(screen.getByRole("checkbox", { name: "Exclude device-sample-1-1" }));
-    openSection("Figures");
+    openSection("Statistics");
     await waitFor(() => {
       expect(within(screen.getByRole("group", { name: /Exclude flagged devices \(1\)/i })).getByRole("img", { name: /PCE .*publication box plot/i })).toHaveAttribute(
         "src",

@@ -12,6 +12,7 @@ function figureUrl(
   direction?: "forward" | "reverse",
   deviceIds: string[] = [],
   excludedDeviceIds?: string[],
+  flaggedDeviceIds: string[] = [],
   revision?: number,
   download = false,
   palette?: string,
@@ -33,6 +34,9 @@ function figureUrl(
       params.append("excluded_device_id", deviceId);
     }
   }
+  if (kind === "uniformity") {
+    for (const deviceId of [...flaggedDeviceIds].sort()) params.append("flagged_device_id", deviceId);
+  }
   if (revision !== undefined) params.set("revision", String(revision));
   if (download) params.set("download", "true");
   return `/api/results/${resultId}/figures/${kind}?${params.toString()}`;
@@ -45,10 +49,12 @@ export function PublicationFigure({
   direction,
   deviceIds = [],
   excludedDeviceIds,
+  flaggedDeviceIds = [],
   revision,
   alt,
   palette,
   scale,
+  downloadEnabled = true,
 }: {
   resultId: number;
   kind: FigureKind;
@@ -56,22 +62,29 @@ export function PublicationFigure({
   direction?: "forward" | "reverse";
   deviceIds?: string[];
   excludedDeviceIds?: string[];
+  flaggedDeviceIds?: string[];
   revision?: number;
   alt: string;
   palette?: string;
   scale?: FigureColorScale;
+  downloadEnabled?: boolean;
 }) {
   const [error, setError] = useState(false);
-  const src = figureUrl(resultId, kind, "svg", metric, direction, deviceIds, excludedDeviceIds, revision, false, palette, scale);
+  const src = figureUrl(resultId, kind, "svg", metric, direction, deviceIds, excludedDeviceIds, flaggedDeviceIds, revision, false, palette, scale);
   useEffect(() => setError(false), [src]);
   return <figure className="publication-figure">
     <div className="publication-figure__downloads" aria-label="Publication figure downloads">
       <span>Download</span>
       {(["svg", "pdf", "tiff"] as const).map((format) =>
-        <a key={format} className="button button--secondary button--small"
-          href={figureUrl(resultId, kind, format, metric, direction, deviceIds, excludedDeviceIds, revision, true, palette, scale)} download>
-          {format.toUpperCase()}
-        </a>)}
+        downloadEnabled
+          ? <a key={format} className="button button--secondary button--small"
+              href={figureUrl(resultId, kind, format, metric, direction, deviceIds, excludedDeviceIds, flaggedDeviceIds, revision, true, palette, scale)} download>
+              {format.toUpperCase()}
+            </a>
+          : <button key={format} className="button button--secondary button--small" type="button" disabled
+              title="Save exclusion changes before downloading the filtered figure.">
+              {format.toUpperCase()}
+            </button>)}
     </div>
     {error
       ? <p role="alert">The publication figure could not be generated for this selection.</p>
