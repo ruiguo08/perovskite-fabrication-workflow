@@ -152,6 +152,7 @@ def create_results_router(
         device_id: list[str] = Query(default=[]),
         preview_exclusions: bool = False,
         excluded_device_id: list[str] = Query(default=[]),
+        flagged_device_id: list[str] = Query(default=[]),
         download: bool = False,
     ) -> Response:
         result = await _result_for_actor_or_404(repository, file_id, auth_context)
@@ -173,6 +174,7 @@ def create_results_router(
                 threshold=threshold,
                 device_ids=device_id,
                 excluded_device_ids=excluded_device_id if preview_exclusions else None,
+                flagged_device_ids=flagged_device_id,
             )
         except PlotInputError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -287,6 +288,30 @@ class PublicationPlotTests(unittest.TestCase):
         self.assertIn("12.0", reverse_values)
         self.assertIn("Forward", forward._suptitle.get_text())
         self.assertIn("Reverse", reverse._suptitle.get_text())
+
+    def test_uniformity_marks_flagged_cells_without_hiding_them_in_all_device_view(self) -> None:
+        plain = _render_uniformity(self.analysis, self.groups, "pce")
+        flagged_analysis = deepcopy(self.analysis)
+        flagged_analysis["devices"][0]["flagged"] = True
+        flagged = _render_uniformity(flagged_analysis, self.groups, "pce")
+        plain_cell = plain.axes[0].patches[0]
+        flagged_cell = flagged.axes[0].patches[0]
+        self.assertEqual(flagged_cell.get_facecolor(), plain_cell.get_facecolor())
+        self.assertNotEqual(flagged_cell.get_edgecolor(), plain_cell.get_edgecolor())
+        self.assertGreater(flagged_cell.get_linewidth(), plain_cell.get_linewidth())
+
+    def test_uniformity_flagged_preview_keeps_measurements_and_marks_outline(self) -> None:
+        plain = render_publication_figure(
+            self.analysis, self.groups, kind="uniformity", metric="pce",
+            excluded_device_ids=(),
+        )
+        flagged = render_publication_figure(
+            self.analysis, self.groups, kind="uniformity", metric="pce",
+            excluded_device_ids=(), flagged_device_ids=("d-1",),
+        )
+        self.assertNotEqual(plain, flagged)
+        self.assertIn(b"amber outline = flagged", flagged)
+        self.assertIn(b"11.0", flagged)
 
     def test_uniformity_rejects_unknown_direction(self) -> None:
         with self.assertRaisesRegex(PlotInputError, "direction must be"):
