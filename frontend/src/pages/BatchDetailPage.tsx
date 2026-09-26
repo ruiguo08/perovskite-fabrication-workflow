@@ -639,6 +639,15 @@ export function BatchDetailPage() {
         <InlineFormError message={actionError} />
       </section>
 
+      <nav className="run-sheet-jump" aria-label="Run sheet sections">
+        <span>Jump to</span>
+        <a href="#preparation-directory-title">Preparations ({recordedPreparations}/{activeSheet.preparations.length})</a>
+        <a href="#execution-directory-title">Executions ({recordedExecutions}/{activeSheet.executions.length})</a>
+        <a href="#deviation-directory-title">Deviations ({activeSheet.deviations.length})</a>
+        <a href="#frozen-conditions-title">Conditions</a>
+        <a href="#substrate-directory-title">Substrates</a>
+      </nav>
+
       <section className="panel" aria-labelledby="frozen-conditions-title">
         <div className="panel__heading">
           <h2 className="panel__title" id="frozen-conditions-title">Frozen conditions</h2>

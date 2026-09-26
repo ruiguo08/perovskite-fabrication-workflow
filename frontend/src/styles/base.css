@@ -500,6 +500,25 @@
   gap: 8px 16px;
 }
 
+.next-actions__list {
+  list-style: decimal;
+  margin: var(--space-3) 0 0;
+  padding-left: 1.5rem;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.next-actions__list li::marker {
+  color: var(--steel);
+  font-family: var(--font-mono);
+}
+
+.next-actions__list p {
+  color: var(--steel);
+  margin: 2px 0 0;
+  font-size: var(--text-sm);
+}
+
 .plan-status-list__item {
   display: inline-flex;
   align-items: center;

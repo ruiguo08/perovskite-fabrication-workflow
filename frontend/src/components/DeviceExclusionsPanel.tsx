@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { AnalysisDevice, ResultAssignmentGroup } from "../types/api";
 import { formatNumber, scaleMetric } from "../lib/format";
-import { hasMetrics, pooledMetric } from "../lib/deviceMetrics";
+import { evaluateDeviceExclusion, parseExclusionThreshold } from "../lib/deviceExclusionRules";
 
 const DEFAULT_THRESHOLDS = { voc: "0.7", pce: "10", ff: "60" };
 
@@ -14,8 +14,8 @@ interface DeviceExclusionsPanelProps {
 }
 
 /**
- * Flag outlier devices (dead/shorted cells) so group statistics and every
- * chart skip them. Exclusion never deletes data: the device keeps its traces,
+ * Flag outlier devices (dead/shorted cells) for statistics and statistical
+ * figures. Exclusion never deletes data: the device keeps its traces,
  * metrics, and assignment, and the flag with its reason is stored in the
  * saved analysis for provenance.
  */
@@ -51,30 +51,18 @@ export function DeviceExclusionsPanel({
   }
 
   function applyPreset() {
-    const vocLimit = Number(vocThreshold);
-    const pceLimit = Number(pceThreshold);
-    const ffLimit = Number(ffThreshold);
+    const thresholds = {
+      voc: parseExclusionThreshold(vocThreshold),
+      pce: parseExclusionThreshold(pceThreshold),
+      ff: parseExclusionThreshold(ffThreshold),
+    };
     const next = new Map(exclusions);
+    for (const [deviceId, reason] of next) {
+      if (reason.startsWith("Automatic:")) next.delete(deviceId);
+    }
     for (const device of devices) {
-      if (!hasMetrics(device.metrics)) {
-        continue;
-      }
-      const reasons: string[] = [];
-      const voc = pooledMetric(device.metrics, "voc");
-      const pce = pooledMetric(device.metrics, "pce");
-      const ff = pooledMetric(device.metrics, "ff");
-      if (voc !== null && Number.isFinite(vocLimit) && voc < vocLimit) {
-        reasons.push(`Voc < ${vocThreshold} V`);
-      }
-      if (pce !== null && Number.isFinite(pceLimit) && pce < pceLimit) {
-        reasons.push(`PCE < ${pceThreshold}%`);
-      }
-      if (ff !== null && Number.isFinite(ffLimit) && ff * 100 < ffLimit) {
-        reasons.push(`FF < ${ffThreshold}%`);
-      }
-      if (reasons.length) {
-        next.set(device.device_id, reasons.join("; "));
-      }
+      const reason = evaluateDeviceExclusion(device, thresholds);
+      if (reason) next.set(device.device_id, reason);
     }
     onChange(next);
   }
@@ -90,11 +78,10 @@ export function DeviceExclusionsPanel({
         <span className="record-count">{exclusions.size} excluded</span>
       </div>
       <p className="run-sheet-muted">
-        Dead or shorted devices can be excluded from statistics and charts. Exclusion keeps the
-        device data and is stored with a reason when assignments are saved. A common rule flags
-        Voc &lt; 0.7 V, PCE &lt; 10%, or FF &lt; 60%. Values below use the mean of the forward and
-        reverse representative scans when both exist (or the combined value if supplied).
-        Thresholds use the same values.
+        Automatic exclusion requires both forward and reverse representative scans to fall below
+        at least one enabled threshold. Each metric uses the same threshold in both directions;
+        different metrics may trigger each direction. Devices with a missing direction need manual
+        review. Exclusion never removes J–V curves or the underlying measurements.
       </p>
       <div className="exclusion-presets">
         <label className="form-field">
@@ -156,9 +143,9 @@ export function DeviceExclusionsPanel({
               <th>Device</th>
               <th>Substrate</th>
               <th>Group</th>
-              <th>Voc (V), F/R mean</th>
-              <th>PCE (%), F/R mean</th>
-              <th>FF (%), F/R mean</th>
+              <th>Voc (V), F / R</th>
+              <th>PCE (%), F / R</th>
+              <th>FF (%), F / R</th>
               <th>Reason</th>
             </tr>
           </thead>
@@ -181,9 +168,9 @@ export function DeviceExclusionsPanel({
                   <td>{device.device_id}</td>
                   <td>{device.substrate_id}</td>
                   <td>{groupNames.get(device.group_id) || "Unassigned"}</td>
-                  <td>{formatNumber(pooledMetric(device.metrics, "voc"), 3)}</td>
-                  <td>{formatNumber(pooledMetric(device.metrics, "pce"), 2)}</td>
-                  <td>{formatNumber(scaleMetric("ff", pooledMetric(device.metrics, "ff")), 2)}</td>
+                  <td>{formatNumber(device.metrics?.forward?.voc, 3)} / {formatNumber(device.metrics?.reverse?.voc, 3)}</td>
+                  <td>{formatNumber(device.metrics?.forward?.pce, 2)} / {formatNumber(device.metrics?.reverse?.pce, 2)}</td>
+                  <td>{formatNumber(scaleMetric("ff", device.metrics?.forward?.ff), 2)} / {formatNumber(scaleMetric("ff", device.metrics?.reverse?.ff), 2)}</td>
                   <td>
                     {excluded ? (
                       <input

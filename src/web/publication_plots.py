@@ -120,6 +120,7 @@ def render_publication_figure(
     metric: str | None = None,
     device_ids: Sequence[str] = (),
     excluded_device_ids: Sequence[str] | None = None,
+    flagged_device_ids: Sequence[str] = (),
     direction: str = "forward",
     palette: str | None = None,
     scale_min: float | None = None,
@@ -137,6 +138,7 @@ def render_publication_figure(
         if excluded_device_ids is None
         else tuple(sorted(set(str(device_id) for device_id in excluded_device_ids)))
     )
+    flagged_override = tuple(sorted(set(str(device_id) for device_id in flagged_device_ids)))
     arguments = (
         analysis_json,
         groups_json,
@@ -145,6 +147,7 @@ def render_publication_figure(
         metric,
         tuple(device_ids),
         exclusion_override,
+        flagged_override,
         direction,
         palette,
         scale_min,
@@ -168,6 +171,7 @@ def _render_cached(
     metric: str | None,
     device_ids: tuple[str, ...],
     excluded_device_ids: tuple[str, ...] | None,
+    flagged_device_ids: tuple[str, ...],
     direction: str,
     palette: str | None,
     scale_min: float | None,
@@ -182,6 +186,7 @@ def _render_cached(
         metric,
         device_ids,
         excluded_device_ids,
+        flagged_device_ids,
         direction,
         palette,
         scale_min,
@@ -198,6 +203,7 @@ def _render_uncached(
     metric: str | None,
     device_ids: tuple[str, ...],
     excluded_device_ids: tuple[str, ...] | None,
+    flagged_device_ids: tuple[str, ...],
     direction: str,
     palette: str | None,
     scale_min: float | None,
@@ -220,6 +226,18 @@ def _render_uncached(
             device["exclusion_reason"] = (
                 device.get("exclusion_reason") if device_id in excluded else None
             )
+    if flagged_device_ids:
+        if kind != "uniformity":
+            raise PlotInputError("flagged markers are only available for uniformity")
+        if len(flagged_device_ids) > 200:
+            raise PlotInputError("at most 200 devices can be flagged in a preview")
+        known = {str(device.get("device_id")) for device in analysis.get("devices") or []}
+        unknown = set(flagged_device_ids) - known
+        if unknown:
+            raise PlotInputError(f"unknown device: {min(unknown)}")
+        flagged = set(flagged_device_ids)
+        for device in analysis.get("devices") or []:
+            device["flagged"] = str(device.get("device_id")) in flagged
     if figure_format not in MEDIA_TYPES:
         raise PlotInputError("unsupported figure format")
     if kind in {"boxplot", "uniformity"} and metric not in METRICS:
@@ -709,7 +727,13 @@ def _render_uniformity(
                     red, green, blue = to_rgb(facecolor)
                     luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
                     text_color = "white" if luminance < 0.48 else "#111827"
-                axis.add_patch(Rectangle((x, y), 0.72, 0.72, facecolor=facecolor, edgecolor="#6B7280", linewidth=0.6, hatch=hatch))
+                flagged = bool(device and device.get("flagged") and not device.get("excluded"))
+                axis.add_patch(Rectangle(
+                    (x, y), 0.72, 0.72, facecolor=facecolor,
+                    edgecolor="#B45309" if flagged else "#6B7280",
+                    linewidth=1.8 if flagged else 0.6,
+                    hatch=hatch,
+                ))
                 axis.text(x + 0.36, y + 0.36, text, ha="center", va="center",
                           fontsize=8.0, color=text_color, clip_on=True)
             axis.add_patch(Rectangle((0.15, 0.15), 2.65, 2.65, fill=False, edgecolor="#374151", linewidth=1.1))
@@ -734,6 +758,8 @@ def _render_uniformity(
         colorbar_label = f"{label} ({unit}); white = {neutral_label}; shared across substrates, scopes and F/R"
     else:
         colorbar_label = f"{label} ({unit}); shared across substrates, scopes and F/R"
+    if any(device.get("flagged") for device in devices):
+        colorbar_label += "; amber outline = flagged"
     colorbar.set_label(colorbar_label)
     if scale_min is not None or scale_max is not None or threshold is not None:
         middle_tick = threshold if threshold is not None else center if palette == "red-blue" else (minimum + maximum) / 2

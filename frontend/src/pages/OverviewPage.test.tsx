@@ -121,4 +121,49 @@ describe("OverviewPage", () => {
     expect(screen.getByText(/Ask an administrator to create the first device layout/i)).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Open device layouts" })).not.toBeInTheDocument();
   });
+
+  it("shows concrete next actions before the activity counts", async () => {
+    apiFetchMock.mockImplementation((path: string) => {
+      if (path === "/api/experiments") {
+        return Promise.resolve([
+          { ...experiment(1, "awaiting-review", "2026-08-12T08:00:00Z"), plan_status: "pending_approval" },
+          experiment(2, "draft-plan", "2026-08-11T08:00:00Z"),
+        ]);
+      }
+      if (path === "/api/results") {
+        return Promise.resolve([{ id: 4, filename: "measurements.csv", group_assignment: "", created_at: "2026-08-13T08:00:00Z" }]);
+      }
+      if (path === "/api/fabrication-batches") {
+        return Promise.resolve([{ id: 3, experiment_id: 2, batch_code: "B-3", status: "in_progress", updated_at: "2026-08-10T08:00:00Z" }]);
+      }
+      if (path === "/api/device-layouts") return Promise.resolve([{ code: "layout" }]);
+      if (path === "/api/campaigns") return Promise.resolve([{ code: "campaign-a", status: "active" }]);
+      return Promise.resolve([]);
+    });
+
+    const { container } = renderPage();
+    const actions = await screen.findByRole("region", { name: "Next actions" });
+    expect(within(actions).getByRole("link", { name: /Assign measurements.csv/ })).toHaveAttribute("href", "/results/4");
+    expect(within(actions).getByRole("link", { name: /Continue B-3/ })).toHaveAttribute("href", "/experiments/2/batches/3");
+    expect(within(actions).getByRole("link", { name: /Approve awaiting-review/ })).toHaveAttribute("href", "/experiments/1");
+    expect(within(actions).getByRole("link", { name: /Continue draft-plan/ })).toHaveAttribute("href", "/experiments/2");
+    expect(container.querySelector(".next-actions")?.compareDocumentPosition(container.querySelector(".stat-tiles")!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it("hides approval actions from students and shows an all-clear state", async () => {
+    sessionState.role = "student";
+    apiFetchMock.mockImplementation((path: string) => {
+      if (path === "/api/experiments") {
+        return Promise.resolve([{ ...experiment(1, "awaiting-review", "2026-08-12T08:00:00Z"), plan_status: "pending_approval" }]);
+      }
+      if (path === "/api/device-layouts") return Promise.resolve([{ code: "layout" }]);
+      if (path === "/api/campaigns") return Promise.resolve([{ code: "campaign-a", status: "active" }]);
+      return Promise.resolve([]);
+    });
+
+    renderPage();
+    const actions = await screen.findByRole("region", { name: "Next actions" });
+    expect(within(actions).getByText("No work needs attention right now.")).toBeInTheDocument();
+    expect(within(actions).queryByText(/Approve awaiting-review/)).not.toBeInTheDocument();
+  });
 });

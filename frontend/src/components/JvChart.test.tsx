@@ -43,7 +43,7 @@ describe("JvChart", () => {
     expect(screen.getByRole("link", { name: "PDF" })).toHaveAttribute("href", expect.stringContaining("palette=nejm"));
   });
 
-  it("selects the best non-excluded device per group", () => {
+  it("lets an excluded device remain the best J–V scan in its group", () => {
     const devices = [
       makeDevice({ device_id: "d-low" }),
       makeDevice({ device_id: "d-best", metrics: { forward: { pce: 13 }, reverse: { pce: 12 } } }),
@@ -54,9 +54,9 @@ describe("JvChart", () => {
     fireEvent.click(screen.getByRole("button", { name: /select best per group/i }));
     fireEvent.click(screen.getByRole("button", { name: /plot selected/i }));
     const source = screen.getByRole("img", { name: /Publication J-V curves/i }).getAttribute("src") ?? "";
-    expect(source).toContain("device_id=d-best");
+    expect(source).toContain("device_id=d-excluded");
     expect(source).toContain("device_id=d-target");
-    expect(source).not.toContain("d-excluded");
+    expect(source).not.toContain("device_id=d-best");
   });
 
   it("caps the generated figure at 12 selected devices", () => {

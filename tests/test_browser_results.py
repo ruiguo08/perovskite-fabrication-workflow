@@ -428,8 +428,8 @@ class ResultBrowserTests(unittest.TestCase):
 
             # Submit assignments through the real POST endpoint via the form.
             evaluate(session, "document.querySelector('form').requestSubmit()")
-            # Saving switches the page to the figures section; the statistics
-            # panel lives behind the Statistics section button.
+            # Saving switches to Statistics. Verify that directional statistics
+            # and their distributions are available at narrow viewport width.
             wait_for_expression(
                 session,
                 "Array.from(document.querySelectorAll('.result-section-nav__button')).find(b => b.textContent.trim().startsWith('Statistics')) && !Array.from(document.querySelectorAll('.result-section-nav__button')).find(b => b.textContent.trim().startsWith('Statistics')).disabled",
@@ -443,11 +443,10 @@ class ResultBrowserTests(unittest.TestCase):
             self._assert_no_overflow(session, "statistics and charts")
 
             # Select all devices and plot their JV curves through the React
-            # controls. The JV chart lives in the figures section, so switch
-            # back from statistics first.
+            # controls. J-V curves have their own top-level section.
             self._click_real(
                 session,
-                "Array.from(document.querySelectorAll('.result-section-nav__button')).find(b => b.textContent.trim().startsWith('Figures'))",
+                "Array.from(document.querySelectorAll('.result-section-nav__button')).find(b => b.textContent.trim().startsWith('J–V curves'))",
             )
             wait_for_expression(
                 session,

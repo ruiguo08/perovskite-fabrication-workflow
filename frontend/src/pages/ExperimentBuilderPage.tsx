@@ -229,7 +229,7 @@ export function ExperimentBuilderPage() {
         </aside>
       </div>
       <div className="builder-actions">
-        <span>{issues.length === 0 ? "All required planning values are complete." : `${issues.length} review items remain.`}</span>
+        <span>{step !== "review" ? "Complete each step, then review the plan before saving." : issues.length === 0 ? "All required planning values are complete." : `${issues.length} review items remain.`}</span>
         <div className="button-row">
           {step !== "review" ? <button type="button" className="button button--secondary" onClick={() => setStep("review")}>Review</button> : null}
           <button type="button" className="button button--primary" disabled={submitting || issues.length > 0} onClick={() => void saveExperiment()}>{submitting ? "Saving…" : "Save experiment"}</button>
