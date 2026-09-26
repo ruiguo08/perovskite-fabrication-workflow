@@ -14,6 +14,7 @@ import { ToastProvider } from "./components/Toast";
 import { LoginPage } from "./pages/LoginPage";
 import { NotReady } from "./pages/NotReady";
 import { OverviewPage } from "./pages/OverviewPage";
+import { WorkflowGuidePage } from "./pages/WorkflowGuidePage";
 import { CampaignsPage } from "./pages/CampaignsPage";
 import { DeviceLayoutsPage } from "./pages/DeviceLayoutsPage";
 import { MaterialsPage } from "./pages/MaterialsPage";
@@ -106,6 +107,7 @@ export default function App() {
             <Route element={<RequireAuth />}>
               <Route element={<AppShell />}>
                 <Route index element={<OverviewPage />} />
+                <Route path="workflow" element={<WorkflowGuidePage />} />
                 <Route
                   path="experiments"
                   element={<ExperimentsPage />}

@@ -50,6 +50,24 @@ describe("application route authorization", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("opens the workflow guide for a student and explains the analysis gate", async () => {
+    window.history.replaceState({}, "", "/app/workflow");
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Workflow guide" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Workflow guide" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("link", { name: "Start an experiment" })).toHaveAttribute(
+      "href",
+      "/app/experiments/new",
+    );
+    expect(screen.getByText(/J-V curves are available immediately after upload/i)).toBeInTheDocument();
+    expect(screen.getByText(/save assignments before group statistics and uniformity/i)).toBeInTheDocument();
+  });
+
   it("preserves an unauthenticated deep link through sign in", async () => {
     sessionState.status = "unauthenticated";
     window.history.replaceState({}, "", "/app/experiments/42?tab=plan");

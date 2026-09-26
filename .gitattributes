@@ -4,4 +4,7 @@
 *.yml text eol=lf
 src/web/static-app/** text eol=lf
 frontend/index.html text eol=lf
+docs/architecture/user-workflow-sop.html text eol=lf
+docs/architecture/user-workflow-sop.json text eol=lf
+frontend/src/assets/user-workflow-sop.svg text eol=lf
 *.woff2 binary

@@ -1,0 +1,54 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "From experiment plan to results",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "planning", "label": "Plan and approve", "focus": ["plan", "submit", "approve", "release"], "note": "Create a complete plan, obtain instructor approval, then release it." },
+      { "id": "fabrication", "label": "Prepare and fabricate", "focus": ["release", "freeze", "record"], "note": "Freeze a batch before fabrication and record the actual work." },
+      { "id": "results", "label": "Upload and analyze", "focus": ["upload", "assign", "jv", "figures"], "note": "J-V curves are available after upload; group statistics need saved assignments." }
+    ]
+  },
+  "lanes": [
+    { "id": "plan_lane", "label": "Experiment plan" },
+    { "id": "batch_lane", "label": "Fabrication batch" },
+    { "id": "result_lane", "label": "Result data" },
+    { "id": "figure_lane", "label": "Review and figures" }
+  ],
+  "phases": [
+    { "id": "plan_phase", "label": "Plan and approve", "fromCol": 0, "toCol": 2 },
+    { "id": "make_phase", "label": "Release and fabricate", "fromCol": 3, "toCol": 4 },
+    { "id": "analyze_phase", "label": "Assign and analyze", "fromCol": 5, "toCol": 5 }
+  ],
+  "mainPath": ["plan", "submit", "approve", "release", "freeze", "record", "upload", "assign", "figures"],
+  "nodes": [
+    { "id": "plan", "lane": "plan_lane", "col": 0, "type": "frontend", "label": "Create experiment", "sublabel": "campaign, layout, conditions", "tag": "student", "width": 150 },
+    { "id": "submit", "lane": "plan_lane", "col": 1, "type": "frontend", "label": "Submit plan", "sublabel": "review the complete recipe", "tag": "student", "width": 150 },
+    { "id": "approve", "lane": "plan_lane", "col": 2, "type": "security", "label": "Approve plan", "sublabel": "check conditions", "tag": "instructor", "width": 150 },
+    { "id": "release", "lane": "plan_lane", "col": 3, "type": "frontend", "label": "Release plan", "sublabel": "approved snapshot", "tag": "student", "width": 150 },
+    { "id": "freeze", "lane": "batch_lane", "col": 3, "type": "database", "label": "Freeze batch", "sublabel": "generate substrates + devices", "tag": "required", "width": 150 },
+    { "id": "record", "lane": "batch_lane", "col": 4, "type": "frontend", "label": "Run fabrication", "sublabel": "start + record actuals", "tag": "run sheet", "width": 150 },
+    { "id": "upload", "lane": "result_lane", "col": 4, "type": "frontend", "label": "Upload J-V CSV", "sublabel": "select the batch first", "tag": "in progress / complete", "width": 150 },
+    { "id": "assign", "lane": "result_lane", "col": 5, "type": "frontend", "label": "Save assignments", "sublabel": "groups + exclusions", "tag": "required for statistics", "width": 150 },
+    { "id": "jv", "lane": "figure_lane", "col": 4, "type": "frontend", "label": "Inspect J-V curves", "sublabel": "all scans after upload", "tag": "available immediately", "width": 150 },
+    { "id": "figures", "lane": "figure_lane", "col": 5, "type": "frontend", "label": "Compare results", "sublabel": "stats + figures", "tag": "F/R kept separate", "width": 150 }
+  ],
+  "edges": [
+    { "id": "plan-submit", "from": "plan", "to": "submit" },
+    { "id": "submit-approve", "from": "submit", "to": "approve" },
+    { "id": "approve-release", "from": "approve", "to": "release" },
+    { "id": "release-freeze", "from": "release", "to": "freeze", "route": "drop", "fromSide": "bottom", "toSide": "top" },
+    { "id": "freeze-record", "from": "freeze", "to": "record" },
+    { "id": "record-upload", "from": "record", "to": "upload", "route": "drop", "fromSide": "bottom", "toSide": "top" },
+    { "id": "upload-assign", "from": "upload", "to": "assign" },
+    { "id": "assign-figures", "from": "assign", "to": "figures", "route": "drop", "fromSide": "bottom", "toSide": "top" },
+    { "id": "upload-jv", "from": "upload", "to": "jv", "role": "branch", "route": "drop", "fromSide": "bottom", "toSide": "top" }
+  ],
+  "cards": [
+    { "dot": "amber", "title": "Before fabrication", "items": ["Experiments → New: create and submit the plan.", "Instructor approval → Release → Freeze batch."] },
+    { "dot": "cyan", "title": "After upload", "items": ["Experiment detail → Upload results; choose the batch.", "Result detail → Assignments; J-V curves are ready now."] },
+    { "dot": "emerald", "title": "Interpret figures", "items": ["Statistics and Uniformity need saved assignments.", "Keep F/R separate; compare all and filtered devices."] }
+  ]
+}

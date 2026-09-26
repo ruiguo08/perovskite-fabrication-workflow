@@ -27,6 +27,7 @@ const NAV_GROUPS: { label: string; items: NavItemDef[] }[] = [
     label: "Laboratory",
     items: [
       { label: "Overview", path: "/" },
+      { label: "Workflow guide", path: "/workflow" },
       { label: "Experiments", path: "/experiments" },
       { label: "Fabrication batches", path: "/fabrication-batches" },
       { label: "Results", path: "/results" },
