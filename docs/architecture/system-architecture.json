@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Fabrication workflow architecture",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/ruiguo08/perovskite-fabrication-workflow",
+      "provider": "github",
+      "revision": "d0c22278a40d94e8a91edb4851aa0116c2a77db2"
+    },
+    "viewBox": [1100, 690]
+  },
+  "components": [
+    { "id": "browser", "type": "frontend", "label": "React web app", "sublabel": "Plan, execute, analyze", "pos": [70, 290], "size": [160, 88], "sources": [{ "path": "frontend/src/App.tsx" }] },
+    { "id": "routes", "type": "backend", "label": "FastAPI routes", "sublabel": "Auth and HTTP", "pos": [280, 290], "size": [160, 88], "sources": [{ "path": "src/web/app.py" }, { "path": "src/web/routes/results.py" }] },
+    { "id": "operations", "type": "backend", "label": "Operations", "sublabel": "Validation and audit", "pos": [490, 290], "size": [160, 88], "sources": [{ "path": "src/web/operations/result_assignment.py" }] },
+    { "id": "repository", "type": "backend", "label": "Repository", "sublabel": "Transactional queries", "pos": [700, 290], "size": [160, 88], "sources": [{ "path": "src/web/repository/repository.py" }] },
+    { "id": "database", "type": "database", "label": "PostgreSQL", "sublabel": "Plans, batches, results", "pos": [910, 290], "size": [160, 88], "sources": [{ "path": "src/web/database.py" }] },
+    { "id": "recipe", "type": "backend", "label": "Recipe models", "sublabel": "Canonical snapshots", "pos": [490, 100], "size": [160, 88], "sources": [{ "path": "src/perovskite_bo/recipe.py" }] },
+    { "id": "analysis", "type": "backend", "label": "Result analysis", "sublabel": "CSV and figures", "pos": [280, 480], "size": [160, 88], "sources": [{ "path": "src/web/jv_parser.py" }, { "path": "src/web/publication_plots.py" }] }
+  ],
+  "connections": [
+    { "id": "browser-routes", "from": "browser", "to": "routes", "label": "HTTP / JSON", "labelAt": [255, 286], "variant": "emphasis" },
+    { "id": "routes-operations", "from": "routes", "to": "operations", "label": "write use cases", "labelAt": [465, 286] },
+    { "id": "operations-repository", "from": "operations", "to": "repository", "label": "transaction", "labelAt": [675, 286] },
+    { "id": "repository-database", "from": "repository", "to": "database", "label": "SQL" },
+    { "id": "operations-recipe", "from": "operations", "to": "recipe", "label": "validate snapshots" },
+    { "id": "routes-analysis", "from": "routes", "to": "analysis", "label": "parse / render", "labelAt": [360, 392] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Workflow", "items": ["The browser guides planning, fabrication, and result review."] },
+    { "dot": "emerald", "title": "Persistence", "items": ["State-changing operations own transactions and audit events."] },
+    { "dot": "violet", "title": "Analysis", "items": ["Instrument CSV parsing and figure rendering are separate services."] }
+  ]
+}
