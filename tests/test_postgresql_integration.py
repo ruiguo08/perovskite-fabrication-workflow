@@ -23,8 +23,10 @@ from web.database import (
     experiment_conditions,
     experiments,
     fabrication_batch_conditions,
+    fabrication_batches,
     fabrication_substrates,
     layer_presets,
+    solution_preparations,
     result_device_assignments,
     result_files,
 )
@@ -53,6 +55,89 @@ from tests.test_web_app import complete_guided_setup
     "set PEROVSKITE_TEST_POSTGRESQL_URL to run PostgreSQL integration tests",
 )
 class PostgreSQLIntegrationTests(unittest.TestCase):
+    def test_plan_start_and_last_batch_cancellation_cannot_both_succeed(self) -> None:
+        from tests.test_fabrication_batches import _create_released_experiment_with_conditions
+
+        async def run() -> None:
+            database = Database(os.environ["PEROVSKITE_TEST_POSTGRESQL_URL"])
+            repository = WebRepository(database)
+            await seed_standard_layouts_async(database)
+            suffix = uuid4().hex[:12]
+            try:
+                actor = await repository.create_user(
+                    username=f"pg-batch-guard-{suffix}", display_name="Batch guard test",
+                    password_hash=hash_password(f"batch guard secret {suffix}"),
+                    role=UserRole.INSTRUCTOR,
+                )
+                experiment_id = await _create_released_experiment_with_conditions(
+                    repository, f"pg-batch-guard-{suffix}", actor_user_id=actor.id,
+                )
+                batch = await repository.create_fabrication_batch(experiment_id, actor_user_id=actor.id)
+                start = asyncio.create_task(repository.update_plan_status(
+                    experiment_id, PlanStatus.IN_PROGRESS, actor_user_id=actor.id,
+                ))
+                cancel = asyncio.create_task(repository.update_fabrication_batch_status(
+                    batch.id, BatchStatus.CANCELLED, actor_user_id=actor.id,
+                ))
+                outcomes = await asyncio.wait_for(
+                    asyncio.gather(start, cancel, return_exceptions=True), timeout=10,
+                )
+                self.assertEqual(sum(outcome is None for outcome in outcomes), 1, outcomes)
+                self.assertEqual(sum(isinstance(outcome, ValueError) for outcome in outcomes), 1, outcomes)
+                async with database.engine.connect() as connection:
+                    plan_status = await connection.scalar(select(experiments.c.plan_status).where(
+                        experiments.c.id == experiment_id,
+                    ))
+                    batch_status = await connection.scalar(select(fabrication_batches.c.status).where(
+                        fabrication_batches.c.id == batch.id,
+                    ))
+                self.assertFalse(plan_status == PlanStatus.IN_PROGRESS.value and batch_status == BatchStatus.CANCELLED.value)
+            finally:
+                await database.dispose()
+
+        asyncio.run(run())
+
+    def test_individual_preparation_waits_for_batch_before_locking_child(self) -> None:
+        """Bulk parent lock must not race an individual child-first edit."""
+        from tests.test_fabrication_batches import _create_released_experiment_with_conditions
+        from sqlalchemy.exc import OperationalError
+
+        url = os.environ["PEROVSKITE_TEST_POSTGRESQL_URL"]
+        suffix = uuid4().hex[:12]
+
+        async def run() -> None:
+            database = Database(url)
+            repository = WebRepository(database)
+            await seed_standard_layouts_async(database)
+            try:
+                actor = await repository.create_user(
+                    username=f"pg-prep-lock-{suffix}", display_name="Preparation lock test",
+                    password_hash=hash_password(f"lock secret {suffix}"), role=UserRole.INSTRUCTOR,
+                )
+                experiment_id = await _create_released_experiment_with_conditions(
+                    repository, f"pg-prep-lock-{suffix}", actor_user_id=actor.id,
+                )
+                batch = await repository.create_fabrication_batch(experiment_id, actor_user_id=actor.id)
+                preparation = (await repository.list_solution_preparations(batch.id))[0]
+                async with database.begin() as parent_connection:
+                    await parent_connection.execute(select(fabrication_batches.c.id).where(
+                        fabrication_batches.c.id == batch.id).with_for_update())
+                    pending = asyncio.create_task(repository.update_solution_preparation(
+                        preparation.id, actual_matches_planned=True,
+                        fabrication_batch_id=batch.id, actor_user_id=actor.id,
+                    ))
+                    await asyncio.sleep(0.25)
+                    try:
+                        async with database.begin() as probe_connection:
+                            await probe_connection.execute(select(solution_preparations.c.id).where(
+                                solution_preparations.c.id == preparation.id).with_for_update(nowait=True))
+                    except OperationalError as error:
+                        self.fail(f"individual edit locked the preparation before the batch: {error}")
+                await asyncio.wait_for(pending, timeout=5)
+            finally:
+                await database.dispose()
+
+        asyncio.run(run())
     def test_catalog_scope_and_current_version_integrity_use_postgresql(self) -> None:
         async def exercise_catalog() -> None:
             database = Database(os.environ["PEROVSKITE_TEST_POSTGRESQL_URL"])

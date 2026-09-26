@@ -10,11 +10,11 @@ Instrument-reported metrics take priority: the trailing per-scan summary table, 
 
 ## Assignments and exclusions
 
-Assignments map instrument substrate labels to the batch's frozen conditions. The page records device exclusions with a reason; exclusions do not delete measurements or remove J-V curves.
+Assignments map instrument substrate labels to the batch's frozen conditions. The first save writes the complete mapping. A later change requires a correction reason and records the old and new condition in the audit log. A laser mark can be rebound to a substrate in the corrected condition only if no other result file uses its old physical device binding. Assignment edits and manual exclusion edits have separate Save controls. Manual exclusions and their reasons are stored in the analysis and audit log; no exclusion deletes measurements or removes J-V curves.
 
-The automatic exclusion preset has one threshold per enabled metric, shared by forward and reverse scans. A direction fails if **any** enabled metric is below its threshold. A device is automatically excluded only when **both** directions fail. The failing metric can differ between directions. A missing direction is not automatically excluded and needs manual review. Manual exclusions remain possible and require a recorded reason.
+The automatic threshold filter has one threshold per enabled metric, shared by forward and reverse scans. A direction fails if **any** enabled metric is below its threshold. A device matches the filter only when **both** directions fail. The failing metric can differ between directions. A missing direction does not match and needs manual review. Thresholds and automatic matches exist only in the current browser analysis view; they are never saved as device exclusions. A manual reason takes priority when the same device also matches a threshold.
 
-Changing exclusions shows an **Unsaved analysis preview** until the selection is saved. The page offers Save and Discard controls. The filtered statistics and figures preview the current selection; exported filtered figures are disabled until that selection is saved.
+Changing manual exclusions shows an **Unsaved analysis preview** until saved. The filtered statistics and figures preview the current selection; filtered figure downloads stay disabled while manual edits are pending. Applied thresholds change the current filtered view without a save and can be cleared independently. Figure downloads reflect the active list of filtered device IDs; record the thresholds separately when using exported images in a publication.
 
 ## What each view counts
 
@@ -28,3 +28,7 @@ Changing exclusions shows an **Unsaved analysis preview** until the selection is
 The figure controls offer multiple palettes. Uniformity also accepts a minimum, maximum, and optional threshold for the color bar. Publication figures can be downloaded as SVG, PDF, or TIFF.
 
 The all-device view is the stable reference for understanding a substrate's measured spatial pattern. The filtered view is useful for comparing the pattern after the recorded quality decision. Review both before drawing conclusions from a small or unevenly excluded group.
+
+## Deferred data export work
+
+The legacy flat `result_files.metrics` cache and training-data export still pool scan directions and may repeat a physical device across uploads. They are retained for compatibility in this change and must not be used for direction-specific scientific statistics. Before training-data export is used, replace the pooled record with explicit forward/reverse fields and deduplicate physical devices across files. No real CSV has been uploaded to the deployed database, so this release does not include a historical-data backfill.

@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from web import create_app
 from web.condition_snapshot import build_condition_snapshot, canonical_hash
@@ -2629,6 +2629,18 @@ class FabricationBatchGuardTests(unittest.TestCase):
                 self._experiment_id, PlanStatus.IN_PROGRESS, actor_user_id=1,
             ))
 
+    def test_cannot_cancel_the_only_active_batch_after_fabrication_starts(self) -> None:
+        batch = asyncio.run(self.repository.create_fabrication_batch(
+            self._experiment_id, actor_user_id=1,
+        ))
+        asyncio.run(self.repository.update_plan_status(
+            self._experiment_id, PlanStatus.IN_PROGRESS, actor_user_id=1,
+        ))
+        with self.assertRaisesRegex(ValueError, "last non-cancelled fabrication batch"):
+            asyncio.run(self.repository.update_fabrication_batch_status(
+                batch.id, BatchStatus.CANCELLED, actor_user_id=1,
+            ))
+
     def test_batch_creation_stays_available_while_in_progress(self) -> None:
         batch = asyncio.run(self.repository.create_fabrication_batch(
             self._experiment_id, actor_user_id=1,
@@ -2691,8 +2703,9 @@ class FabricationBatchGuardTests(unittest.TestCase):
 
     def test_zero_batch_guard_passes_once_a_batch_exists(self) -> None:
         from web.repository.condition import _require_fabrication_batches
+        from web.database import fabrication_batches
 
-        asyncio.run(self.repository.create_fabrication_batch(
+        batch = asyncio.run(self.repository.create_fabrication_batch(
             self._experiment_id, actor_user_id=1,
         ))
 
@@ -2701,6 +2714,18 @@ class FabricationBatchGuardTests(unittest.TestCase):
                 await _require_fabrication_batches(
                     connection, self._experiment_id, PlanStatus.IN_PROGRESS,
                 )
+                with self.assertRaisesRegex(ValueError, "completed fabrication batch"):
+                    await _require_fabrication_batches(
+                        connection, self._experiment_id, PlanStatus.COMPLETED,
+                    )
+                await connection.execute(update(fabrication_batches).where(
+                    fabrication_batches.c.id == batch.id).values(status=BatchStatus.CANCELLED.value))
+                with self.assertRaisesRegex(ValueError, "non-cancelled fabrication batch"):
+                    await _require_fabrication_batches(
+                        connection, self._experiment_id, PlanStatus.IN_PROGRESS,
+                    )
+                await connection.execute(update(fabrication_batches).where(
+                    fabrication_batches.c.id == batch.id).values(status=BatchStatus.COMPLETED.value))
                 await _require_fabrication_batches(
                     connection, self._experiment_id, PlanStatus.COMPLETED,
                 )

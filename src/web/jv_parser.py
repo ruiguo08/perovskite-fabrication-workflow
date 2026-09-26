@@ -75,9 +75,9 @@ INSTRUMENT_TIMESTAMP_FORMATS = ("%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M")
 # Instrument-reported summary metrics are recognized in trace info rows whose
 # label names the metric ("Voc (V)", "Jsc (mA/cm2)", "FF (%)", "Eff (%)",
 # "PCE (%)", "Fill Factor"). The label must start with the metric keyword and
-# the numeric value is parsed from the adjacent cell. FF reported above 1 is
-# interpreted as a percentage and normalized to the 0-1 fraction used by the
-# computed metrics. Labels and raw values are preserved verbatim so future
+# the numeric value is parsed from the adjacent cell. Explicit percent labels
+# are normalized to the 0-1 fraction regardless of magnitude. Unitless FF
+# above 1 is treated as percent for legacy exports. Labels and raw values are preserved so future
 # extraction rules can be refined without re-uploading the file.
 INSTRUMENT_METRIC_PATTERNS = {
     "voc": re.compile(r"^voc\b", re.IGNORECASE),
@@ -243,7 +243,7 @@ def _instrument_metrics_from_info(
             value = _parse_numeric_value(raw_value)
             if value is None:
                 continue
-            if name == "ff" and value > 1:
+            if name == "ff" and ("%" in label or "percent" in label.casefold() or value > 1):
                 value = value / 100.0
             metrics[name] = value
             labels[name] = label
@@ -310,7 +310,7 @@ def _summary_table_metrics(
             value = _parse_numeric_value(row[column].strip())
             if value is None:
                 continue
-            if name == "ff" and value > 1:
+            if name == "ff":
                 value = value / 100.0
             metrics[name] = value
         extra = {label: row[column_of[label]].strip() for label in extra_labels}
@@ -434,7 +434,7 @@ def _statistic_section_metrics(
             value = _parse_numeric_value(row[start + 1].strip())
             if value is None:
                 continue
-            if name == "ff" and value > 1:
+            if name == "ff" and ("%" in label or "percent" in label.casefold() or value > 1):
                 value = value / 100.0
             metrics[name] = value
             labels[name] = label
@@ -1241,27 +1241,18 @@ def _substrate_records(devices: Iterable[Mapping[str, Any]]) -> list[dict[str, A
     return list(grouped.values())
 
 
-def _device_metric_values(device: Mapping[str, Any], metric_name: str) -> list[float]:
-    """Sample values a device contributes to cross-device statistics.
+def _device_metric_value(
+    device: Mapping[str, Any], direction: str, metric_name: str
+) -> float | None:
+    """One representative scan per device and direction; never use a combined tier."""
 
-    v6 directional metrics: every valid scan is an independent sample
-    (forward and reverse pooled). v5 flat device metrics (migrated
-    analyses): the single flat value is the sample.
-    """
-
-    metrics = device.get("metrics")
-    if not metrics:
-        return []
-    if "forward" in metrics or "reverse" in metrics or "combined" in metrics:
-        values = []
-        for direction in ("forward", "reverse"):
-            directional = metrics.get(direction)
-            if directional and metric_name in directional:
-                values.append(float(directional[metric_name]))
-        return values
-    if metric_name in metrics:
-        return [float(metrics[metric_name])]
-    return []
+    directional = (device.get("metrics") or {}).get(direction)
+    value = directional.get(metric_name) if isinstance(directional, Mapping) else None
+    return (
+        float(value)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+        else None
+    )
 
 
 def _group_statistics(
@@ -1281,13 +1272,14 @@ def _group_statistics(
             if device.get("metrics") and not device.get("excluded")
         ]
         metric_rows = {}
-        for metric_name in metric_names:
-            values = [
-                value
-                for device in valid
-                for value in _device_metric_values(device, metric_name)
-            ]
-            metric_rows[metric_name] = _descriptive_statistics(values)
+        for direction in ("forward", "reverse"):
+            metric_rows[direction] = {}
+            for metric_name in metric_names:
+                values = [
+                    value for device in valid
+                    if (value := _device_metric_value(device, direction, metric_name)) is not None
+                ]
+                metric_rows[direction][metric_name] = _descriptive_statistics(values)
         group_rows.append(
             {
                 "group_id": group_id,
@@ -1300,60 +1292,62 @@ def _group_statistics(
             }
         )
 
-    def group_metric_values(group_row: Mapping[str, Any], metric_name: str) -> list[float]:
+    def group_metric_values(group_row: Mapping[str, Any], direction: str, metric_name: str) -> list[float]:
         return [
             value
             for device in devices
             if device.get("group_id") == group_row["group_id"]
             and device.get("metrics")
             and not device.get("excluded")
-            for value in _device_metric_values(device, metric_name)
+            if (value := _device_metric_value(device, direction, metric_name)) is not None
         ]
 
     control = next((group for group in group_rows if group["kind"] == "control"), None)
     comparisons = []
     if control is not None:
         for target in (group for group in group_rows if group["kind"] == "target"):
-            metric_comparisons = {}
-            for metric_name in metric_names:
-                control_stats = control["metrics"][metric_name]
-                target_stats = target["metrics"][metric_name]
-                control_mean = control_stats["mean"]
-                target_mean = target_stats["mean"]
-                if control_mean is None or target_mean is None:
-                    metric_comparisons[metric_name] = None
-                    continue
-                control_values = group_metric_values(control, metric_name)
-                target_values = group_metric_values(target, metric_name)
-                difference = target_mean - control_mean
-                denominator = _pooled_standard_deviation(
-                    control_values,
-                    target_values,
+            for direction in ("forward", "reverse"):
+                metric_comparisons = {}
+                for metric_name in metric_names:
+                    control_stats = control["metrics"][direction][metric_name]
+                    target_stats = target["metrics"][direction][metric_name]
+                    control_mean = control_stats["mean"]
+                    target_mean = target_stats["mean"]
+                    if control_mean is None or target_mean is None:
+                        metric_comparisons[metric_name] = None
+                        continue
+                    control_values = group_metric_values(control, direction, metric_name)
+                    target_values = group_metric_values(target, direction, metric_name)
+                    difference = target_mean - control_mean
+                    denominator = _pooled_standard_deviation(
+                        control_values,
+                        target_values,
+                    )
+                    p_value, test_method = _permutation_p_value(
+                        control_values,
+                        target_values,
+                        seed=f"{target['group_id']}:{direction}:{metric_name}",
+                    )
+                    metric_comparisons[metric_name] = {
+                        "mean_difference": difference,
+                        "percent_difference": (
+                            None if control_mean == 0 else difference / abs(control_mean) * 100.0
+                        ),
+                        "effect_size": None if denominator == 0 else difference / denominator,
+                        "p_value": p_value,
+                        "adjusted_p_value": None,
+                        "test_method": test_method,
+                    }
+                _add_benjamini_hochberg_adjustment(metric_comparisons)
+                comparisons.append(
+                    {
+                        "target_group_id": target["group_id"],
+                        "target_name": target["name"],
+                        "control_name": control["name"],
+                        "direction": direction,
+                        "metrics": metric_comparisons,
+                    }
                 )
-                p_value, test_method = _permutation_p_value(
-                    control_values,
-                    target_values,
-                    seed=f"{target['group_id']}:{metric_name}",
-                )
-                metric_comparisons[metric_name] = {
-                    "mean_difference": difference,
-                    "percent_difference": (
-                        None if control_mean == 0 else difference / abs(control_mean) * 100.0
-                    ),
-                    "effect_size": None if denominator == 0 else difference / denominator,
-                    "p_value": p_value,
-                    "adjusted_p_value": None,
-                    "test_method": test_method,
-                }
-            _add_benjamini_hochberg_adjustment(metric_comparisons)
-            comparisons.append(
-                {
-                    "target_group_id": target["group_id"],
-                    "target_name": target["name"],
-                    "control_name": control["name"],
-                    "metrics": metric_comparisons,
-                }
-            )
     return {"groups": group_rows, "comparisons": comparisons}
 
 

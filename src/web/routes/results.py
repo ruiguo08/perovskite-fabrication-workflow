@@ -243,6 +243,7 @@ def create_results_router(
                     for item in payload.exclusions
                 ],
                 group_assignment=None,
+                correction_reason=payload.correction_reason,
                 actor_user_id=auth_context.user.id,
                 actor_role=auth_context.user.role,
                 client_ip=_client_ip(request),

@@ -705,7 +705,7 @@ export interface AnalysisGroupStat {
   valid_device_count: number;
   /** Devices flagged as excluded outliers within this group (schema 4+). */
   excluded_device_count?: number;
-  metrics: Record<string, AnalysisGroupMetric>;
+    metrics: Record<"forward" | "reverse", Record<string, AnalysisGroupMetric>>;
 }
 
 export interface AnalysisComparisonMetric {
@@ -720,7 +720,8 @@ export interface AnalysisComparisonMetric {
 export interface AnalysisComparison {
   target_group_id: string;
   target_name: string;
-  control_name: string;
+    control_name: string;
+    direction: "forward" | "reverse";
   metrics: Record<string, AnalysisComparisonMetric | null>;
 }
 

@@ -163,7 +163,47 @@ describe("OverviewPage", () => {
 
     renderPage();
     const actions = await screen.findByRole("region", { name: "Next actions" });
-    expect(within(actions).getByText("No work needs attention right now.")).toBeInTheDocument();
+    expect(within(actions).getByText(/Waiting for instructor approval/)).toBeInTheDocument();
     expect(within(actions).queryByText(/Approve awaiting-review/)).not.toBeInTheDocument();
+  });
+
+  it("guides approved and released plans and unmeasured completed batches", async () => {
+    apiFetchMock.mockImplementation((path: string) => {
+      if (path === "/api/experiments") return Promise.resolve([
+        { ...experiment(1, "approved-plan", "2026-08-12T08:00:00Z"), plan_status: "approved" },
+        { ...experiment(2, "released-plan", "2026-08-11T08:00:00Z"), plan_status: "released" },
+      ]);
+      if (path === "/api/fabrication-batches") return Promise.resolve([
+        { id: 9, experiment_id: 2, batch_code: "B-9", status: "completed", updated_at: "2026-08-12T08:00:00Z" },
+      ]);
+      if (path === "/api/device-layouts") return Promise.resolve([{ code: "layout" }]);
+      if (path === "/api/campaigns") return Promise.resolve([{ code: "campaign-a", status: "active" }]);
+      return Promise.resolve([]);
+    });
+    renderPage();
+    const actions = await screen.findByRole("region", { name: "Next actions" });
+    expect(within(actions).getByRole("link", { name: /Release approved-plan/ })).toHaveAttribute("href", "/experiments/1");
+    expect(within(actions).getByRole("link", { name: /Upload results for B-9/ })).toHaveAttribute("href", "/experiments/2/upload");
+    expect(within(actions).getByRole("link", { name: /Start fabrication for released-plan/ })).toHaveAttribute("href", "/experiments/2");
+  });
+
+  it("guides an in-progress plan to completion after its batch finishes", async () => {
+    apiFetchMock.mockImplementation((path: string) => {
+      if (path === "/api/experiments") return Promise.resolve([
+        { ...experiment(3, "running-plan", "2026-08-12T08:00:00Z"), plan_status: "in_progress" },
+      ]);
+      if (path === "/api/fabrication-batches") return Promise.resolve([
+        { id: 10, experiment_id: 3, batch_code: "B-10", status: "completed", updated_at: "2026-08-12T08:00:00Z" },
+      ]);
+      if (path === "/api/results") return Promise.resolve([
+        { id: 11, fabrication_batch_id: 10, filename: "measured.csv", group_assignment: "Control: 1 substrates", created_at: "2026-08-13T08:00:00Z" },
+      ]);
+      if (path === "/api/device-layouts") return Promise.resolve([{ code: "layout" }]);
+      if (path === "/api/campaigns") return Promise.resolve([{ code: "campaign-a", status: "active" }]);
+      return Promise.resolve([]);
+    });
+    renderPage();
+    const actions = await screen.findByRole("region", { name: "Next actions" });
+    expect(within(actions).getByRole("link", { name: /Complete running-plan/ })).toHaveAttribute("href", "/experiments/3");
   });
 });

@@ -56,6 +56,7 @@ async def save_result_analysis(
     assignments: Sequence[ResultAssignmentInput],
     exclusions: Sequence[ResultExclusionInput],
     group_assignment: str | None,
+    correction_reason: str | None = None,
     actor_user_id: int,
     actor_role: UserRole | None,
     client_ip: str | None = None,
@@ -153,6 +154,7 @@ async def save_result_analysis(
                     for key, value in assignments_by_substrate.items()
                 },
                 group_assignment=group_assignment,
+                correction_reason=correction_reason,
                 actor_user_id=actor_user_id,
                 client_ip=client_ip,
             )

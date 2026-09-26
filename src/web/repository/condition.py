@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import and_, delete, func, insert, select, update
+from sqlalchemy import and_, delete, insert, select, update
 from datetime import datetime
 
 from ..condition_snapshot import (
@@ -292,29 +292,28 @@ async def _require_fabrication_batches(
     experiment_id: int,
     target: PlanStatus,
 ) -> None:
-    """Block starting/completing fabrication while no batch has been frozen.
+    """Require an active batch to start and a finished batch to complete.
 
     Result upload is keyed per fabrication batch, so a plan that reaches
     completed with zero batches could never receive characterization data.
     """
     if target not in (PlanStatus.IN_PROGRESS, PlanStatus.COMPLETED):
         return
-    batch_count = (
+    statuses = (
         await connection.execute(
-            select(func.count())
-            .select_from(fabrication_batches)
+            select(fabrication_batches.c.status)
             .where(fabrication_batches.c.experiment_id == experiment_id)
         )
-    ).scalar_one()
-    if batch_count == 0:
-        stage = (
-            "starting fabrication"
-            if target is PlanStatus.IN_PROGRESS
-            else "completing fabrication"
-        )
-        raise ValueError(
-            f"at least one fabrication batch must be frozen before {stage}"
-        )
+    ).scalars().all()
+    if not statuses:
+        raise ValueError("at least one fabrication batch must be frozen before fabrication starts or completes")
+    if target is PlanStatus.IN_PROGRESS and all(status == "cancelled" for status in statuses):
+        raise ValueError("at least one non-cancelled fabrication batch is required to start fabrication")
+    if target is PlanStatus.COMPLETED:
+        if "completed" not in statuses:
+            raise ValueError("at least one completed fabrication batch is required to complete the plan")
+        if any(status not in {"completed", "cancelled"} for status in statuses):
+            raise ValueError("all fabrication batches must be completed or cancelled before completing the plan")
 
 
 class ConditionsMixin:

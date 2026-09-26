@@ -4,11 +4,9 @@ import { EmptyState } from "../components/EmptyState";
 import { ErrorState } from "../components/ErrorState";
 import { PageHeader } from "../components/PageHeader";
 import { apiFetch } from "../lib/api";
-import { formatDateTime, formatNumber, scaleMetric } from "../lib/format";
+import { formatDateTime } from "../lib/format";
 import { useApiResource } from "../lib/useApiResource";
 import type { ResultListItem } from "../types/api";
-
-const METRIC_ORDER = ["voc", "jsc", "ff", "pce"];
 
 function buildQuery(experimentId: string, batchId: string): string {
   const params = new URLSearchParams();
@@ -20,20 +18,6 @@ function buildQuery(experimentId: string, batchId: string): string {
   }
   const query = params.toString();
   return query ? `?${query}` : "";
-}
-
-function MetricSummary({ metrics }: { metrics: Record<string, number | null> }) {
-  const entries = METRIC_ORDER.filter((name) => metrics[name] !== undefined);
-  if (entries.length === 0) {
-    return null;
-  }
-  return (
-    <span className="run-sheet-muted">
-      {entries
-        .map((name) => `${name.toUpperCase()} ${formatNumber(scaleMetric(name, metrics[name]), name === "voc" ? 3 : 2)}`)
-        .join(" · ")}
-    </span>
-  );
 }
 
 export function ResultsPage() {
@@ -137,7 +121,7 @@ export function ResultsPage() {
                 ) : (
                   <span className="run-sheet-muted">Unassigned</span>
                 )}
-                <MetricSummary metrics={result.metrics} />
+                <Link className="record-link" to={`/results/${result.id}`}>View direction-specific statistics</Link>
               </article>
             ))}
           </div>

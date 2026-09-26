@@ -409,6 +409,7 @@ class ResultAssignmentsPayload(ApiModel):
 
     assignments: list[ResultAssignmentItem] = Field(..., min_length=1)
     exclusions: list[ResultDeviceExclusion] = Field(default_factory=list)
+    correction_reason: str | None = Field(default=None, max_length=500)
 
 
 class BaselinePayload(ApiModel):

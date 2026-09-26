@@ -98,9 +98,10 @@ describe("ResultsPage", () => {
     expect(await screen.findByText("Unable to load results")).toBeInTheDocument();
   });
 
-  it("shows a metrics summary when available", async () => {
+  it("links to direction-specific statistics without displaying pooled metrics", async () => {
     apiFetchMock.mockResolvedValue([makeResult({ metrics: { pce: 12.5, voc: 1.1 } })]);
     renderPage();
-    expect(await screen.findByText(/pce/i)).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "View direction-specific statistics" })).toHaveAttribute("href", "/results/71");
+    expect(screen.queryByText(/PCE 12\.5/)).not.toBeInTheDocument();
   });
 });

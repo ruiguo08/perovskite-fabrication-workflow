@@ -1,16 +1,19 @@
 import { useMemo, useState } from "react";
 import type { AnalysisDevice, ResultAssignmentGroup } from "../types/api";
 import { formatNumber, scaleMetric } from "../lib/format";
-import { evaluateDeviceExclusion, parseExclusionThreshold } from "../lib/deviceExclusionRules";
+import { evaluateDeviceExclusion, parseExclusionThreshold, type ExclusionThresholds } from "../lib/deviceExclusionRules";
 
 const DEFAULT_THRESHOLDS = { voc: "0.7", pce: "10", ff: "60" };
 
 interface DeviceExclusionsPanelProps {
   devices: AnalysisDevice[];
   groups: ResultAssignmentGroup[];
-  /** Pending exclusions (device id -> reason), including saved ones. */
+  /** Persisted manual exclusions (device id -> reason), including unsaved edits. */
   exclusions: Map<string, string>;
   onChange: (exclusions: Map<string, string>) => void;
+  automaticExclusions: Map<string, string>;
+  initialThresholds?: ExclusionThresholds | null;
+  onApplyAutomatic: (exclusions: Map<string, string>, thresholds: ExclusionThresholds) => void;
 }
 
 /**
@@ -24,10 +27,13 @@ export function DeviceExclusionsPanel({
   groups,
   exclusions,
   onChange,
+  automaticExclusions,
+  initialThresholds,
+  onApplyAutomatic,
 }: DeviceExclusionsPanelProps) {
-  const [vocThreshold, setVocThreshold] = useState(DEFAULT_THRESHOLDS.voc);
-  const [pceThreshold, setPceThreshold] = useState(DEFAULT_THRESHOLDS.pce);
-  const [ffThreshold, setFfThreshold] = useState(DEFAULT_THRESHOLDS.ff);
+  const [vocThreshold, setVocThreshold] = useState(() => initialThresholds?.voc?.toString() ?? DEFAULT_THRESHOLDS.voc);
+  const [pceThreshold, setPceThreshold] = useState(() => initialThresholds?.pce?.toString() ?? DEFAULT_THRESHOLDS.pce);
+  const [ffThreshold, setFfThreshold] = useState(() => initialThresholds?.ff?.toString() ?? DEFAULT_THRESHOLDS.ff);
 
   const groupNames = useMemo(
     () => new Map(groups.map((group) => [group.group_id, group.name])),
@@ -56,15 +62,12 @@ export function DeviceExclusionsPanel({
       pce: parseExclusionThreshold(pceThreshold),
       ff: parseExclusionThreshold(ffThreshold),
     };
-    const next = new Map(exclusions);
-    for (const [deviceId, reason] of next) {
-      if (reason.startsWith("Automatic:")) next.delete(deviceId);
-    }
+    const next = new Map<string, string>();
     for (const device of devices) {
       const reason = evaluateDeviceExclusion(device, thresholds);
       if (reason) next.set(device.device_id, reason);
     }
-    onChange(next);
+    onApplyAutomatic(next, thresholds);
   }
 
   function clearAll() {
@@ -75,13 +78,14 @@ export function DeviceExclusionsPanel({
     <section className="panel" aria-labelledby="exclusions-title">
       <div className="panel__heading">
         <h2 className="panel__title" id="exclusions-title">Device exclusions</h2>
-        <span className="record-count">{exclusions.size} excluded</span>
+        <span className="record-count">{exclusions.size} manual · {automaticExclusions.size} threshold matches</span>
       </div>
       <p className="run-sheet-muted">
         Automatic exclusion requires both forward and reverse representative scans to fall below
         at least one enabled threshold. Each metric uses the same threshold in both directions;
         different metrics may trigger each direction. Devices with a missing direction need manual
-        review. Exclusion never removes J–V curves or the underlying measurements.
+        review. Threshold matches apply only to the current analysis view and are not saved.
+        Manual reasons are saved and take priority. Exclusion never removes J–V curves or the underlying measurements.
       </p>
       <div className="exclusion-presets">
         <label className="form-field">
@@ -123,15 +127,22 @@ export function DeviceExclusionsPanel({
         </label>
         <div className="exclusion-presets__actions">
           <button type="button" className="button button--secondary" onClick={applyPreset}>
-            Flag matching devices
+            Apply thresholds
           </button>
+          <button type="button" className="button button--secondary" onClick={() => {
+            setVocThreshold(DEFAULT_THRESHOLDS.voc);
+            setPceThreshold(DEFAULT_THRESHOLDS.pce);
+            setFfThreshold(DEFAULT_THRESHOLDS.ff);
+            onApplyAutomatic(new Map(), { voc: null, pce: null, ff: null });
+          }}
+            disabled={!initialThresholds}>Clear threshold filter</button>
           <button
             type="button"
             className="button button--secondary"
             onClick={clearAll}
             disabled={exclusions.size === 0}
           >
-            Clear exclusions
+            Clear manual exclusions
           </button>
         </div>
       </div>
@@ -152,10 +163,11 @@ export function DeviceExclusionsPanel({
           <tbody>
             {devices.map((device) => {
               const excluded = exclusions.has(device.device_id);
+              const automaticReason = automaticExclusions.get(device.device_id);
               return (
                 <tr
                   key={device.device_id}
-                  className={excluded ? "exclusion-row--excluded" : undefined}
+                  className={excluded || automaticReason ? "exclusion-row--excluded" : undefined}
                 >
                   <td>
                     <input
@@ -165,7 +177,7 @@ export function DeviceExclusionsPanel({
                       onChange={() => toggle(device.device_id)}
                     />
                   </td>
-                  <td>{device.device_id}</td>
+                  <td>{device.device_id}{automaticReason ? <span className="status-badge">Threshold match</span> : null}</td>
                   <td>{device.substrate_id}</td>
                   <td>{groupNames.get(device.group_id) || "Unassigned"}</td>
                   <td>{formatNumber(device.metrics?.forward?.voc, 3)} / {formatNumber(device.metrics?.reverse?.voc, 3)}</td>
@@ -181,9 +193,7 @@ export function DeviceExclusionsPanel({
                         aria-label={`Exclusion reason for ${device.device_id}`}
                         onChange={(event) => setReason(device.device_id, event.target.value)}
                       />
-                    ) : (
-                      "—"
-                    )}
+                    ) : (automaticReason ?? "—")}
                   </td>
                 </tr>
               );

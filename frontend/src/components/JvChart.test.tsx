@@ -43,7 +43,7 @@ describe("JvChart", () => {
     expect(screen.getByRole("link", { name: "PDF" })).toHaveAttribute("href", expect.stringContaining("palette=nejm"));
   });
 
-  it("lets an excluded device remain the best J–V scan in its group", () => {
+  it("lets users plot excluded devices without ranking opposite scan directions", () => {
     const devices = [
       makeDevice({ device_id: "d-low" }),
       makeDevice({ device_id: "d-best", metrics: { forward: { pce: 13 }, reverse: { pce: 12 } } }),
@@ -51,12 +51,15 @@ describe("JvChart", () => {
       makeDevice({ device_id: "d-target", group_id: "target", metrics: { forward: { pce: 11 }, reverse: null } }),
     ];
     render(<JvChart resultId={42} devices={devices} groups={GROUPS} />);
-    fireEvent.click(screen.getByRole("button", { name: /select best per group/i }));
+    fireEvent.click(screen.getByText("Choose devices (0 selected)"));
+    fireEvent.click(screen.getByLabelText("Choose device d-excluded"));
+    fireEvent.click(screen.getByLabelText("Choose device d-target"));
     fireEvent.click(screen.getByRole("button", { name: /plot selected/i }));
     const source = screen.getByRole("img", { name: /Publication J-V curves/i }).getAttribute("src") ?? "";
     expect(source).toContain("device_id=d-excluded");
     expect(source).toContain("device_id=d-target");
     expect(source).not.toContain("device_id=d-best");
+    expect(screen.queryByRole("button", { name: /select best per group/i })).not.toBeInTheDocument();
   });
 
   it("caps the generated figure at 12 selected devices", () => {
@@ -76,5 +79,18 @@ describe("JvChart", () => {
     expect(screen.getAllByText("50.00").length).toBeGreaterThanOrEqual(1);
     fireEvent.click(screen.getByRole("button", { name: /clear/i }));
     expect(screen.getByRole("img", { name: /All-device J-V curves/i })).toBeInTheDocument();
+  });
+
+  it("shows forward and reverse device metrics in separate rows", () => {
+    render(<JvChart resultId={42} devices={[makeDevice({ metrics: {
+      forward: { voc: 1.01, jsc: 20, ff: 0.5, pce: 10 },
+      reverse: { voc: 1.09, jsc: 22, ff: 0.7, pce: 15 },
+    } })]} groups={GROUPS} />);
+    fireEvent.click(screen.getByText(/Device metrics/));
+    const table = screen.getByText("Device metrics").closest("details")!;
+    expect(table.querySelectorAll("tbody tr")).toHaveLength(2);
+    expect(screen.getByText("Forward")).toBeInTheDocument();
+    expect(screen.getByText("Reverse")).toBeInTheDocument();
+    expect(screen.queryByText("12.50")).not.toBeInTheDocument();
   });
 });
