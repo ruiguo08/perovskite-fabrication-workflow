@@ -9,8 +9,9 @@ import { PageHeader } from "../components/PageHeader";
 import { useToast } from "../components/Toast";
 import { apiFetch } from "../lib/api";
 import { formatDateTime, formatNumber, scaleMetric } from "../lib/format";
-import { bestTrace, pooledMetric } from "../lib/deviceMetrics";
+import { bestTrace, directionalMetric } from "../lib/deviceMetrics";
 import { directionalGroupStatistics } from "../lib/resultStatistics";
+import type { ExclusionThresholds } from "../lib/deviceExclusionRules";
 import { DeviceScanHistoryPanel } from "../components/DeviceScanHistoryPanel";
 import { useApiResource } from "../lib/useApiResource";
 import type {
@@ -146,7 +147,10 @@ interface AssignmentFormProps {
   submitting: boolean;
   error: string | null;
   allAssigned: boolean;
-  statisticsPresent: boolean;
+  hasSavedAssignments: boolean;
+  assignmentChangeCount: number;
+  correctionReason: string;
+  onCorrectionReasonChange: (value: string) => void;
   onAssign: (substrateId: string, value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
@@ -159,7 +163,10 @@ function AssignmentForm({
   submitting,
   error,
   allAssigned,
-  statisticsPresent,
+  hasSavedAssignments,
+  assignmentChangeCount,
+  correctionReason,
+  onCorrectionReasonChange,
   onAssign,
   onSubmit,
 }: AssignmentFormProps) {
@@ -190,8 +197,13 @@ function AssignmentForm({
           ) : null}
         </div>
       ))}
+      {hasSavedAssignments && assignmentChangeCount > 0 ? <label className="form-field">
+        <span className="form-field__label">Correction reason</span>
+        <input className="text-input" aria-label="Assignment correction reason" required maxLength={500}
+          value={correctionReason} onChange={(event) => onCorrectionReasonChange(event.target.value)} />
+      </label> : null}
       <button className="button button--primary assignment-form__save" type="submit" disabled={!allAssigned || submitting}>
-        {submitting ? "Saving…" : statisticsPresent ? "Save assignments and update analysis" : "Save assignments"}
+        {submitting ? "Saving…" : "Save assignments"}
       </button>
       <InlineFormError message={error} />
     </form>
@@ -222,6 +234,7 @@ function DeviceInspectionTable({ devices, groups }: DeviceInspectionTableProps) 
               <th>Substrate</th>
               <th>Group</th>
               <th>Traces</th>
+              <th>Scan</th>
               <th>Voc</th>
               <th>Jsc</th>
               <th>FF</th>
@@ -229,10 +242,10 @@ function DeviceInspectionTable({ devices, groups }: DeviceInspectionTableProps) 
             </tr>
           </thead>
           <tbody>
-            {devices.map((device) => {
+            {devices.flatMap((device) => (["forward", "reverse"] as const).map((direction) => {
               const validCount = device.traces.filter((trace) => trace.valid).length;
               return (
-                <tr key={device.device_id}>
+                <tr key={`${device.device_id}-${direction}`}>
                   <td>{device.device_id}</td>
                   <td>{device.substrate_id}</td>
                   <td>{groupNames.get(device.group_id) || "Unassigned"}</td>
@@ -244,13 +257,14 @@ function DeviceInspectionTable({ devices, groups }: DeviceInspectionTableProps) 
                     ))}
                     {validCount === 0 ? <span className="status-badge status-badge--danger">No valid trace</span> : null}
                   </td>
-                  <td>{formatNumber(pooledMetric(device.metrics, "voc"), 3)}</td>
-                  <td>{formatNumber(pooledMetric(device.metrics, "jsc"), 2)}</td>
-                  <td>{formatNumber(scaleMetric("ff", pooledMetric(device.metrics, "ff")), 2)}</td>
-                  <td>{formatNumber(pooledMetric(device.metrics, "pce"), 2)}</td>
+                  <td>{direction === "forward" ? "Forward" : "Reverse"}</td>
+                  <td>{formatNumber(directionalMetric(device.metrics, direction, "voc"), 3)}</td>
+                  <td>{formatNumber(directionalMetric(device.metrics, direction, "jsc"), 2)}</td>
+                  <td>{formatNumber(scaleMetric("ff", directionalMetric(device.metrics, direction, "ff")), 2)}</td>
+                  <td>{formatNumber(directionalMetric(device.metrics, direction, "pce"), 2)}</td>
                 </tr>
               );
-            })}
+            }))}
           </tbody>
         </table>
       </div>
@@ -313,6 +327,9 @@ export function ResultDetailPage() {
   const [figureRevision, setFigureRevision] = useState(0);
   const [inconsistent, setInconsistent] = useState<Set<string>>(new Set());
   const [exclusions, setExclusions] = useState<Map<string, string>>(new Map());
+  const [correctionReason, setCorrectionReason] = useState("");
+  const [automaticExclusions, setAutomaticExclusions] = useState<Map<string, string>>(new Map());
+  const [activeThresholds, setActiveThresholds] = useState<ExclusionThresholds | null>(null);
   const [uniformityMetric, setUniformityMetric] = useState<"voc" | "jsc" | "ff" | "pce">("pce");
   const [distributionMetric, setDistributionMetric] = useState<"voc" | "jsc" | "ff" | "pce">("pce");
   const [uniformityDirection, setUniformityDirection] = useState<"forward" | "reverse">("forward");
@@ -348,6 +365,9 @@ export function ResultDetailPage() {
     setAssignments(new Map());
     setInconsistent(new Set());
     setExclusions(new Map());
+    setCorrectionReason("");
+    setAutomaticExclusions(new Map());
+    setActiveThresholds(null);
     setUniformityMetric("pce");
     setDistributionMetric("pce");
     setUniformityDirection("forward");
@@ -398,9 +418,10 @@ export function ResultDetailPage() {
       : [];
   }, [analysis]);
   const groups = useMemo<ResultAssignmentGroup[]>(() => activeDetail?.groups ?? [], [activeDetail]);
+  const effectiveExclusions = useMemo(() => new Map([...automaticExclusions, ...exclusions]), [automaticExclusions, exclusions]);
   const directionalStatistics = useMemo(
-    () => directionalGroupStatistics(devices, groups, new Set(exclusions.keys())),
-    [devices, groups, exclusions],
+    () => directionalGroupStatistics(devices, groups, new Set(effectiveExclusions.keys())),
+    [devices, groups, effectiveExclusions],
   );
   const savedAssignments = useMemo(() => new Map(substrates
     .filter((substrate) => substrate.batch_condition_id !== undefined)
@@ -509,6 +530,7 @@ export function ResultDetailPage() {
   function discardChanges() {
     setAssignments(new Map(savedAssignments));
     setExclusions(new Map(savedExclusions));
+    setCorrectionReason("");
     setError(null);
   }
 
@@ -545,9 +567,12 @@ export function ResultDetailPage() {
     setUniformityScaleError(null);
   }
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function saveAnalysis(mode: "assignments" | "manual") {
     if (!activeDetail) {
+      return;
+    }
+    if (mode === "assignments" && savedAssignments.size && assignmentChangeCount > 0 && !correctionReason.trim()) {
+      setError("Enter a correction reason before changing saved assignments.");
       return;
     }
     const generation = routeGeneration.current;
@@ -557,12 +582,13 @@ export function ResultDetailPage() {
       const payload = {
         assignments: substrates.map((s) => ({
           analysis_substrate_id: s.substrate_id,
-          batch_condition_id: assignments.get(s.substrate_id)!,
+          batch_condition_id: (mode === "assignments" ? assignments : savedAssignments).get(s.substrate_id)!,
         })),
-        exclusions: [...exclusions.entries()].map(([analysis_device_id, reason]) => ({
+        exclusions: [...(mode === "manual" ? exclusions : savedExclusions).entries()].map(([analysis_device_id, reason]) => ({
           analysis_device_id,
           reason: reason.trim() || "flagged as an outlier",
         })),
+        correction_reason: mode === "assignments" && savedAssignments.size ? correctionReason.trim() : undefined,
       };
       const updated = await apiFetch<ResultDetail>(
         `/api/results/${resultIdNumber}/assignments`,
@@ -572,11 +598,26 @@ export function ResultDetailPage() {
         return;
       }
       // Replace local state with the complete returned ResultDetailResponse.
+      const savedAnalysis = isParsedAnalysis(updated?.analysis) ? updated.analysis : null;
+      if (savedAnalysis && mode === "manual") {
+        setExclusions(new Map(savedAnalysis.devices
+          .filter((device) => device.excluded)
+          .map((device) => [device.device_id, device.exclusion_reason ?? ""] as const)));
+      }
+      if (savedAnalysis && mode === "assignments") {
+        setAssignments(new Map(savedAnalysis.substrates
+          .filter((substrate) => substrate.batch_condition_id !== undefined)
+          .map((substrate) => [substrate.substrate_id, substrate.batch_condition_id!] as const)));
+      }
+      prefilledDetailRef.current = updated;
       setLocalDetail(updated);
       setFigureRevision((current) => current + 1);
-      setAssignmentExpanded(false);
-      setActiveSection("statistics");
-      show("Assignments saved. Analysis updated.", "success");
+      if (mode === "assignments") {
+        setAssignmentExpanded(false);
+        setActiveSection("statistics");
+        setCorrectionReason("");
+      }
+      show(mode === "assignments" ? "Assignments saved. Analysis updated." : "Manual exclusions saved.", "success");
     } catch (caught) {
       if (isCurrentGeneration(generation)) {
         setError(caught instanceof Error ? caught.message : "Unable to save assignments.");
@@ -586,6 +627,11 @@ export function ResultDetailPage() {
         setSubmitting(false);
       }
     }
+  }
+
+  function submitAssignments(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void saveAnalysis("assignments");
   }
 
   if (!Number.isInteger(resultIdNumber) || resultIdNumber <= 0) {
@@ -654,10 +700,20 @@ export function ResultDetailPage() {
             : ""}</span>
         </div>
         <div className="button-row">
-          <button className="button button--primary button--small" type="submit" form="result-assignment-form" disabled={!allAssigned || submitting}>
-            {submitting ? "Saving…" : "Save changes"}
-          </button>
+          {assignmentChangeCount > 0 ? <button className="button button--primary button--small" type="button" onClick={() => void saveAnalysis("assignments")} disabled={!allAssigned || submitting}>
+            {submitting ? "Saving…" : "Apply assignment changes"}
+          </button> : null}
+          {exclusionChangeCount > 0 ? <button className="button button--primary button--small" type="button" onClick={() => void saveAnalysis("manual")}
+            disabled={savedAssignments.size !== substrates.length || submitting}>
+            {submitting ? "Saving…" : "Save manual exclusions"}
+          </button> : null}
           <button className="button button--secondary button--small" type="button" onClick={discardChanges}>Discard changes</button>
+        </div>
+      </div> : null}
+      {activeThresholds ? <div className="analysis-preview-banner" role="status" aria-label="Active threshold filter">
+        <div>
+          <strong>Current analysis filter</strong>
+          <span>Voc &lt; {activeThresholds.voc ?? "off"} V · PCE &lt; {activeThresholds.pce ?? "off"}% · FF &lt; {activeThresholds.ff ?? "off"}% · {automaticExclusions.size} devices match. Thresholds are not saved.</span>
         </div>
       </div> : null}
 
@@ -771,9 +827,12 @@ export function ResultDetailPage() {
             submitting={submitting}
             error={error}
             allAssigned={allAssigned}
-            statisticsPresent={statisticsPresent}
+            hasSavedAssignments={savedAssignments.size > 0}
+            assignmentChangeCount={assignmentChangeCount}
+            correctionReason={correctionReason}
+            onCorrectionReasonChange={setCorrectionReason}
             onAssign={handleAssign}
-            onSubmit={(event) => void submit(event)}
+            onSubmit={submitAssignments}
           />
         ) : (
           <p className="run-sheet-muted">Assignments saved for {substrates.length} substrates.</p>
@@ -786,16 +845,16 @@ export function ResultDetailPage() {
           devices={devices}
           groups={groups}
           exclusions={exclusions}
+          automaticExclusions={automaticExclusions}
+          initialThresholds={activeThresholds}
+          onApplyAutomatic={(next, thresholds) => {
+            setAutomaticExclusions(next);
+            setActiveThresholds(Object.values(thresholds).some((value) => value !== null) ? thresholds : null);
+          }}
           onChange={(next) => {
             setExclusions(next);
-            setAssignmentExpanded(true);
           }}
         />
-        {assignmentExpanded ? (
-          <button className="button button--primary" type="submit" form="result-assignment-form" disabled={!allAssigned || submitting}>
-            {submitting ? "Saving…" : "Save condition and exclusion changes"}
-          </button>
-        ) : null}
       </details>
       </> : null}
 
@@ -864,7 +923,7 @@ export function ResultDetailPage() {
         </form>
         <p className="run-sheet-muted">Values use the selected metric's unit. Blank bounds use the automatic range. The threshold marks the color scale midpoint; with RdYlGn, values below it are red/yellow and values above it are green. Both device scopes share the scale. For diverging red-blue, white marks the threshold when set; otherwise it marks the all-device median if within range, or the selected range midpoint. Color bar ticks and cell numbers show the measured metric.</p>
         <FigureScopePair resultId={resultIdNumber} kind="uniformity" metric={uniformityMetric} direction={uniformityDirection}
-          excludedDeviceIds={[...exclusions.keys()]} revision={figureRevision} palette={uniformityPalette} scale={uniformityScale} filteredPreview={exclusionChangeCount > 0}
+          excludedDeviceIds={[...effectiveExclusions.keys()]} revision={figureRevision} palette={uniformityPalette} scale={uniformityScale} filteredPreview={exclusionChangeCount > 0}
           alt={`Publication substrate uniformity for ${uniformityMetric}, ${uniformityDirection} scan`} />
       </section>
       ) : null}
@@ -926,7 +985,7 @@ export function ResultDetailPage() {
             </div>
             <p className="run-sheet-muted">Forward and reverse scans are separate (F/R). Both device scopes use the current exclusion selection.</p>
             <FigureScopePair resultId={resultIdNumber} kind="boxplot" metric={distributionMetric}
-              excludedDeviceIds={[...exclusions.keys()]} revision={figureRevision} palette={distributionPalette} filteredPreview={exclusionChangeCount > 0}
+              excludedDeviceIds={[...effectiveExclusions.keys()]} revision={figureRevision} palette={distributionPalette} filteredPreview={exclusionChangeCount > 0}
               alt={`${METRIC_META.find((metric) => metric.name === distributionMetric)?.label} publication box plot with device points, split by scan direction`}
             />
           </section>

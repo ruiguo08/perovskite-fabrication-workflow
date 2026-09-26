@@ -9,8 +9,6 @@ import type { AnalysisDevice, AnalysisTrace, DirectionalMetrics } from "../types
  * choice). `combined` only exists on analyses migrated from the old flat
  * schema 5. UI surfaces choose a reading order:
  *
- * - pooled reading (default for tables/thresholds): combined → merge any
- *   available directions → null
  * - directional reading: the named tier only.
  * - trace-level reading (schema 7): the best-PCE valid trace per direction,
  *   recomputed from `device.traces`, is the display default.
@@ -24,30 +22,6 @@ function firstFinite(record: Record<string, number> | null | undefined, name: st
 /** Any tier present at all (shape check for "device has metrics"). */
 export function hasMetrics(metrics: DirectionalMetrics | null | undefined): boolean {
   return Boolean(metrics && (metrics.combined || metrics.forward || metrics.reverse));
-}
-
-/**
- * Representative single value for pooled views: prefer the instrument's
- * combined tier, else average whatever directions exist, else null.
- */
-export function pooledMetric(
-  metrics: DirectionalMetrics | null | undefined,
-  name: string,
-): number | null {
-  if (!metrics) {
-    return null;
-  }
-  const combined = firstFinite(metrics.combined, name);
-  if (combined !== null) {
-    return combined;
-  }
-  const directions = [metrics.forward, metrics.reverse]
-    .map((tier) => firstFinite(tier, name))
-    .filter((value): value is number => value !== null);
-  if (!directions.length) {
-    return null;
-  }
-  return directions.reduce((sum, value) => sum + value, 0) / directions.length;
 }
 
 /** Value from one named tier ("forward" | "reverse" | "combined"); null otherwise. */

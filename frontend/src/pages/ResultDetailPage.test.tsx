@@ -447,7 +447,7 @@ describe("ResultDetailPage", () => {
     expect(screen.getByLabelText(/Assign sample-1 to/i)).toBeInTheDocument();
   });
 
-  it("posts device exclusions with reasons alongside the assignments", async () => {
+  it("does not save pending manual exclusions when assignments are saved", async () => {
     await renderReadyDetail();
     openExclusions();
     fireEvent.click(screen.getByRole("checkbox", { name: "Exclude device-sample-1-1" }));
@@ -457,15 +457,13 @@ describe("ResultDetailPage", () => {
     const selects = screen.getAllByLabelText(/Assign .* to/i);
     fireEvent.change(selects[0], { target: { value: "21" } });
     fireEvent.change(selects[1], { target: { value: "22" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save condition and exclusion changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save assignments" }));
     await waitFor(
       () => {
         const call = apiFetchMock.mock.calls.find(
           (c) => c[0] === "/api/results/42/assignments" && c[1]?.method === "POST",
         );
-        expect(call?.[1]?.body.exclusions).toEqual([
-          { analysis_device_id: "device-sample-1-1", reason: "Voc < 0.7 V" },
-        ]);
+        expect(call?.[1]?.body.exclusions).toEqual([]);
       },
       { timeout: 5000 },
     );
@@ -483,9 +481,9 @@ describe("ResultDetailPage", () => {
     await renderReadyDetail();
     openSection("Assignments");
     openExclusions();
-    expect(screen.queryByRole("button", { name: "Save condition and exclusion changes" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save manual exclusions" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("checkbox", { name: "Exclude device-sample-1-1" }));
-    expect(screen.getByRole("button", { name: "Save condition and exclusion changes" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save manual exclusions" })).toBeInTheDocument();
   });
 
   it("labels pending exclusions across sections and holds filtered exports until save", async () => {
@@ -790,6 +788,135 @@ describe("ResultDetailPage", () => {
     const inspection = screen.getByRole("heading", { name: "Parsed devices" }).closest("section")!;
     // The device id also appears in the device-exclusions panel table.
     expect(within(inspection).getAllByText("device-sample-1-1").length).toBeGreaterThan(0);
+    expect(inspection.querySelectorAll("tbody tr")).toHaveLength(4);
+    expect(within(inspection).getAllByText("Forward")).toHaveLength(2);
+    expect(within(inspection).getAllByText("Reverse")).toHaveLength(2);
+  });
+
+  it("saves manual exclusions without submitting pending assignment edits", async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === "/api/results/42") {
+        const detail = makeDetail();
+        const analysis = detail.analysis as { substrates: Array<{ batch_condition_id?: number }>; statistics: unknown };
+        analysis.substrates[0].batch_condition_id = 21;
+        analysis.substrates[1].batch_condition_id = 22;
+        analysis.statistics = { groups: [], comparisons: [] };
+        return detail;
+      }
+      return undefined;
+    });
+    await renderReadyDetail();
+    openSection("Assignments");
+    fireEvent.click(screen.getByRole("button", { name: /Edit assignments/i }));
+    fireEvent.change(screen.getByLabelText("Assign sample-1 to"), { target: { value: "22" } });
+    openExclusions();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Exclude device-sample-1-1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save manual exclusions" }));
+    await waitFor(() => {
+      const call = apiFetchMock.mock.calls.find((c) => c[0] === "/api/results/42/assignments" && c[1]?.method === "POST");
+      expect(call?.[1]?.body.assignments).toEqual([
+        { analysis_substrate_id: "sample-1", batch_condition_id: 21 },
+        { analysis_substrate_id: "sample-2", batch_condition_id: 22 },
+      ]);
+      expect(call?.[1]?.body.exclusions).toEqual([
+        { analysis_device_id: "device-sample-1-1", reason: "flagged as an outlier" },
+      ]);
+    });
+  });
+
+  it("requires a reason when changing saved substrate assignments", async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === "/api/results/42") {
+        const detail = makeDetail();
+        const analysis = detail.analysis as { substrates: Array<{ batch_condition_id?: number }>; statistics: unknown };
+        analysis.substrates[0].batch_condition_id = 21;
+        analysis.substrates[1].batch_condition_id = 22;
+        analysis.statistics = { groups: [], comparisons: [] };
+        return detail;
+      }
+      return undefined;
+    });
+    await renderReadyDetail();
+    fireEvent.click(screen.getByRole("button", { name: /Edit assignments/i }));
+    fireEvent.change(screen.getByLabelText("Assign sample-1 to"), { target: { value: "22" } });
+    expect(screen.getByLabelText("Assignment correction reason")).toBeRequired();
+    fireEvent.click(screen.getByRole("button", { name: "Apply assignment changes" }));
+    expect(screen.getByText(/Enter a correction reason/i)).toBeInTheDocument();
+    expect(apiFetchMock.mock.calls.some((call) => call[1]?.method === "POST")).toBe(false);
+    fireEvent.change(screen.getByLabelText("Assignment correction reason"), { target: { value: "Checked physical label" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply assignment changes" }));
+    await waitFor(() => expect(apiFetchMock.mock.calls.find((call) => call[1]?.method === "POST")?.[1]?.body.correction_reason).toBe("Checked physical label"));
+  });
+
+  it("clears the manual unsaved state after the server normalizes a blank reason", async () => {
+    apiFetchMock.mockImplementation(async (path: string, options?: { method?: string }) => {
+      if (path === "/api/results/42") {
+        const detail = makeDetail();
+        const analysis = detail.analysis as { substrates: Array<{ batch_condition_id?: number }>; statistics: unknown };
+        analysis.substrates[0].batch_condition_id = 21;
+        analysis.substrates[1].batch_condition_id = 22;
+        analysis.statistics = { groups: [], comparisons: [] };
+        return detail;
+      }
+      if (path === "/api/results/42/assignments" && options?.method === "POST") {
+        const detail = makeDetail();
+        const analysis = detail.analysis as { substrates: Array<{ batch_condition_id?: number }>; devices: Array<{ excluded?: boolean; exclusion_reason?: string }>; statistics: unknown };
+        analysis.substrates[0].batch_condition_id = 21;
+        analysis.substrates[1].batch_condition_id = 22;
+        analysis.devices[0].excluded = true;
+        analysis.devices[0].exclusion_reason = "flagged as an outlier";
+        analysis.statistics = { groups: [], comparisons: [] };
+        return detail;
+      }
+      return undefined;
+    });
+    await renderReadyDetail();
+    openExclusions();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Exclude device-sample-1-1" }));
+    fireEvent.change(screen.getByLabelText("Exclusion reason for device-sample-1-1"), { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save manual exclusions" }));
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Unsaved analysis preview" })).not.toBeInTheDocument());
+    expect(screen.getByLabelText("Exclusion reason for device-sample-1-1")).toHaveValue("flagged as an outlier");
+  });
+
+  it("applies threshold filtering without adding automatic reasons to saved exclusions", async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === "/api/results/42") {
+        const detail = makeDetail();
+        const analysis = detail.analysis as { devices: Array<{ metrics: unknown }>; statistics: unknown };
+        analysis.devices[0].metrics = {
+          forward: { voc: 0.6, pce: 5, ff: 0.3 },
+          reverse: { voc: 0.65, pce: 6, ff: 0.4 },
+        };
+        analysis.statistics = { groups: [], comparisons: [] };
+        return detail;
+      }
+      return undefined;
+    });
+    await renderReadyDetail();
+    openExclusions();
+    fireEvent.click(screen.getByRole("button", { name: "Apply thresholds" }));
+    expect(screen.queryByRole("status", { name: "Unsaved analysis preview" })).not.toBeInTheDocument();
+    openSection("Uniformity");
+    expect(screen.getByRole("status", { name: "Active threshold filter" })).toHaveTextContent("1 devices match");
+    const filtered = screen.getByRole("group", { name: /Exclude flagged devices \(1\)/i });
+    expect(within(filtered).getByRole("link", { name: "SVG" })).toHaveAttribute("href", expect.stringContaining("excluded_device_id=device-sample-1-1"));
+    expect(apiFetchMock.mock.calls.some((call) => call[1]?.method === "POST")).toBe(false);
+  });
+
+  it("restores the applied threshold values after switching result sections", async () => {
+    const detail = makeDetail();
+    const analysis = detail.analysis as { statistics: unknown };
+    analysis.statistics = { groups: [], comparisons: [] };
+    apiFetchMock.mockImplementation(async (path: string) => path === "/api/results/42" ? detail : undefined);
+    await renderReadyDetail();
+    openExclusions();
+    fireEvent.change(screen.getByLabelText("Flag devices with Voc below (V)"), { target: { value: "0.9" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply thresholds" }));
+    openSection("Uniformity");
+    openSection("Assignments");
+    openExclusions();
+    expect(screen.getByLabelText("Flag devices with Voc below (V)")).toHaveValue(0.9);
   });
 
   it("does not show a stale toast when an assignment POST resolves after unmount", async () => {

@@ -993,6 +993,7 @@ async def apply_result_assignment(
     analysis: dict[str, Any],
     substrate_assignments: Mapping[str, int],
     group_assignment: str,
+    correction_reason: str | None = None,
     actor_user_id: int,
     client_ip: str | None = None,
 ) -> None:
@@ -1070,6 +1071,39 @@ async def apply_result_assignment(
     }
     if set(normalized_assignments) != set(analysis_substrate_ids):
         raise ValueError("every result substrate must be assigned to a batch condition")
+    previous_analysis = result_row["analysis"] or {}
+    previous_assignments = {
+        str(substrate["substrate_id"]): int(substrate["batch_condition_id"])
+        for substrate in previous_analysis.get("substrates", [])
+        if substrate.get("batch_condition_id") is not None
+    }
+    assignment_changes = [
+        {
+            "analysis_substrate_id": substrate_id,
+            "from_batch_condition_id": previous_assignments.get(substrate_id),
+            "to_batch_condition_id": condition_id,
+        }
+        for substrate_id, condition_id in normalized_assignments.items()
+        if previous_assignments.get(substrate_id) != condition_id
+    ]
+    if previous_assignments and assignment_changes and not (correction_reason or "").strip():
+        raise ValueError("a correction reason is required when saved assignments change")
+    previous_exclusions = {
+        str(device["device_id"]): str(device.get("exclusion_reason", ""))
+        for device in previous_analysis.get("devices", [])
+        if device.get("excluded")
+    }
+    new_exclusions = {
+        str(device["device_id"]): str(device.get("exclusion_reason", ""))
+        for device in analysis_devices if device.get("excluded")
+    }
+    exclusion_changes = [
+        {"analysis_device_id": device_id,
+         "from_reason": previous_exclusions.get(device_id),
+         "to_reason": new_exclusions.get(device_id)}
+        for device_id in sorted(previous_exclusions.keys() | new_exclusions.keys())
+        if previous_exclusions.get(device_id) != new_exclusions.get(device_id)
+    ]
     condition_rows = (
         await connection.execute(
             select(fabrication_batch_conditions).where(
@@ -1180,6 +1214,44 @@ async def apply_result_assignment(
                     "record a measurement_shortfall deviation for the "
                     "unmeasured substrate(s)"
                 )
+
+    # A saved assignment may have bound a CSV laser mark to the wrong
+    # condition. A correction can release that binding only when this file
+    # owns it and no other uploaded result still references the substrate.
+    # The batch lock above serializes this with assignments from other files.
+    for analysis_substrate_id, condition_id in normalized_assignments.items():
+        if not LASER_MARK_PATTERN.fullmatch(analysis_substrate_id.upper()):
+            continue
+        laser_mark = normalize_laser_mark(analysis_substrate_id)
+        marked_row = marked_by_mark.get(laser_mark)
+        if marked_row is None or int(marked_row["batch_condition_id"]) == condition_id:
+            continue
+        if previous_assignments.get(analysis_substrate_id) != int(marked_row["batch_condition_id"]):
+            continue
+        physical_device_ids = set((await connection.execute(
+            select(fabrication_devices.c.id).where(
+                fabrication_devices.c.substrate_id == int(marked_row["substrate_id"])
+            )
+        )).scalars().all())
+        if not (physical_device_ids & previous_device_ids):
+            continue
+        other_file_reference = await connection.scalar(
+            select(result_device_assignments.c.id).where(
+                result_device_assignments.c.fabrication_device_id.in_(physical_device_ids)
+            ).limit(1)
+        )
+        if other_file_reference is not None:
+            raise ValueError(
+                f"laser mark {laser_mark} is used by another result file; "
+                "correct that file's assignment before changing this one"
+            )
+        await connection.execute(
+            update(fabrication_substrates)
+            .where(fabrication_substrates.c.id == int(marked_row["substrate_id"]))
+            .values(substrate_mark=None, updated_at=now)
+        )
+        marked_by_mark.pop(laser_mark)
+        blank_by_condition.setdefault(int(marked_row["batch_condition_id"]), []).append(marked_row)
 
     # Associate substrates with known physical marks. Instrument-only names
     # still receive a manually chosen condition, but cannot safely identify
@@ -1346,10 +1418,9 @@ async def apply_result_assignment(
             analysis=normalized_analysis,
             analysis_schema_version=_analysis_schema_version(normalized_analysis),
             group_assignment=group_assignment.strip(),
-            # The list API reads this column; it is a write-time cache pooled
-            # from the stored traces (non-excluded, valid) so list, detail,
-            # and exports never disagree. The analysis JSON itself carries no
-            # aggregates.
+            # Legacy flat cache retained for training export compatibility.
+            # It pools scan directions and must not be used for scientific
+            # statistics or displayed as a direction-specific result.
             metrics=_normalize_metrics(_flat_metrics_from_analysis(normalized_analysis)),
         )
     )
@@ -1385,6 +1456,9 @@ async def apply_result_assignment(
                 for device in normalized_analysis["devices"]
                 if device.get("excluded")
             ),
+            "assignment_changes": assignment_changes,
+            "manual_exclusion_changes": exclusion_changes,
+            "correction_reason": (correction_reason or "").strip() or None,
         },
         client_ip=client_ip,
     )

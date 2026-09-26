@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { AnalysisDevice, ResultAssignmentGroup } from "../types/api";
 import { formatNumber, scaleMetric } from "../lib/format";
-import { bestPce, hasMetrics, pooledMetric } from "../lib/deviceMetrics";
+import { directionalMetric } from "../lib/deviceMetrics";
 import { DeviceMultiSelect } from "./DeviceMultiSelect";
 import { PublicationFigure } from "./PublicationFigure";
 
@@ -38,24 +38,12 @@ export function JvChart({ resultId, devices, groups, figureRevision }: {
   function plotSelected() {
     setPlotted(Array.from(selected).slice(0, MAX_PLOTTED_DEVICES));
   }
-  function selectBestPerGroup() {
-    const next = new Set<string>();
-    for (const group of groups) {
-      const best = devices
-        .filter((device) => device.group_id === group.group_id && hasMetrics(device.metrics))
-        .sort((left, right) => (bestPce(right) ?? -Infinity) - (bestPce(left) ?? -Infinity))[0];
-      if (best) next.add(best.device_id);
-    }
-    applySelection(next);
-  }
-
   const allSelected = devices.length > 0 && selected.size === devices.length;
   return <section className="panel" aria-labelledby="jv-chart-title">
     <div className="panel__heading">
       <h2 className="panel__title" id="jv-chart-title">Publication J–V curves</h2>
       <div className="button-row">
         <button type="button" className="button button--secondary button--small" onClick={selectAll}>Select all</button>
-        <button type="button" className="button button--secondary button--small" onClick={selectBestPerGroup}>Select best per group</button>
         <button type="button" className="button button--secondary button--small" onClick={plotSelected} disabled={!selected.size}>Plot selected</button>
         <button type="button" className="button button--secondary button--small" onClick={clearAll}>Clear</button>
         <span className="run-sheet-muted">{selected.size} selected{allSelected ? " · all" : ""}</span>
@@ -80,23 +68,24 @@ export function JvChart({ resultId, devices, groups, figureRevision }: {
       <summary>Device metrics <span>{devices.length} devices</span></summary>
     <div className="table-scroll">
       <table className="data-table">
-        <thead><tr><th>Select</th><th>Device</th><th>Substrate</th><th>Group</th><th>Valid scans</th><th>Voc</th><th>Jsc</th><th>FF</th><th>PCE</th></tr></thead>
-        <tbody>{devices.map((device) => <tr key={device.device_id}>
-          <td><input type="checkbox" aria-label={`Select ${device.device_id}`} checked={selected.has(device.device_id)}
+        <thead><tr><th>Select</th><th>Device</th><th>Substrate</th><th>Group</th><th>Scan</th><th>Valid scans</th><th>Voc</th><th>Jsc</th><th>FF</th><th>PCE</th></tr></thead>
+        <tbody>{devices.flatMap((device) => (["forward", "reverse"] as const).map((direction) => <tr key={`${device.device_id}-${direction}`}>
+          <td>{direction === "forward" ? <input type="checkbox" aria-label={`Select ${device.device_id}`} checked={selected.has(device.device_id)}
             value={device.device_id}
             onChange={(event) => {
               const next = new Set(selected);
               if (event.target.checked) next.add(device.device_id); else next.delete(device.device_id);
               applySelection(next);
-            }} /></td>
+            }} /> : null}</td>
           <td>{device.device_id}{device.excluded && <span className="status-badge status-badge--danger">excluded</span>}</td>
           <td>{device.substrate_id}</td><td>{groupNames.get(device.group_id) ?? "Unassigned"}</td>
-          <td>{device.traces.filter((trace) => trace.valid).length}</td>
-          <td>{formatNumber(pooledMetric(device.metrics, "voc"), 3)}</td>
-          <td>{formatNumber(pooledMetric(device.metrics, "jsc"), 2)}</td>
-          <td>{formatNumber(scaleMetric("ff", pooledMetric(device.metrics, "ff")), 2)}</td>
-          <td>{formatNumber(pooledMetric(device.metrics, "pce"), 2)}</td>
-        </tr>)}</tbody>
+          <td>{direction === "forward" ? "Forward" : "Reverse"}</td>
+          <td>{device.traces.filter((trace) => trace.valid && trace.direction === direction).length}</td>
+          <td>{formatNumber(directionalMetric(device.metrics, direction, "voc"), 3)}</td>
+          <td>{formatNumber(directionalMetric(device.metrics, direction, "jsc"), 2)}</td>
+          <td>{formatNumber(scaleMetric("ff", directionalMetric(device.metrics, direction, "ff")), 2)}</td>
+          <td>{formatNumber(directionalMetric(device.metrics, direction, "pce"), 2)}</td>
+        </tr>))}</tbody>
       </table>
     </div>
     </details>

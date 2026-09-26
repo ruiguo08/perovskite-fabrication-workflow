@@ -18,6 +18,7 @@ function device(id: string, forward: Record<string, number> | null, reverse: Rec
 describe("DeviceExclusionsPanel automatic rule", () => {
   it("uses a union of metric failures within each direction and requires both directions to fail", () => {
     const onChange = vi.fn();
+    const onApplyAutomatic = vi.fn();
     render(<DeviceExclusionsPanel
       devices={[
         device("different-metrics", { voc: 0.65, pce: 12, ff: 0.7 }, { voc: 0.9, pce: 12, ff: 0.55 }),
@@ -27,29 +28,36 @@ describe("DeviceExclusionsPanel automatic rule", () => {
       groups={[{ group_id: "control", batch_condition_id: 1, condition_code: "C", kind: "control", name: "Control" }]}
       exclusions={new Map()}
       onChange={onChange}
+      automaticExclusions={new Map()}
+      onApplyAutomatic={onApplyAutomatic}
     />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Flag matching devices" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply thresholds" }));
 
-    const selected = onChange.mock.lastCall?.[0] as Map<string, string>;
+    const selected = onApplyAutomatic.mock.lastCall?.[0] as Map<string, string>;
     expect([...selected.keys()]).toEqual(["different-metrics"]);
     expect(selected.get("different-metrics")).toMatch(/Forward.*Voc.*0\.65.*Reverse.*FF.*55/);
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("recalculates automatic flags while preserving manual exclusions", () => {
     const onChange = vi.fn();
+    const onApplyAutomatic = vi.fn();
     render(<DeviceExclusionsPanel
       devices={[
         device("now-passes", { voc: 0.9, pce: 12, ff: 0.7 }, { voc: 0.9, pce: 12, ff: 0.7 }),
         device("manual", { voc: 0.9, pce: 12, ff: 0.7 }, { voc: 0.9, pce: 12, ff: 0.7 }),
       ]}
       groups={[]}
-      exclusions={new Map([["now-passes", "Automatic: Forward Voc 0.6 V < 0.8 V; Reverse Voc 0.6 V < 0.8 V"], ["manual", "Observed a damaged contact"]])}
+      exclusions={new Map([["manual", "Observed a damaged contact"]])}
       onChange={onChange}
+      automaticExclusions={new Map([["now-passes", "Automatic: Forward Voc 0.6 V < 0.8 V; Reverse Voc 0.6 V < 0.8 V"]])}
+      onApplyAutomatic={onApplyAutomatic}
     />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Flag matching devices" }));
-    const selected = onChange.mock.lastCall?.[0] as Map<string, string>;
-    expect([...selected.entries()]).toEqual([["manual", "Observed a damaged contact"]]);
+    fireEvent.click(screen.getByRole("button", { name: "Apply thresholds" }));
+    const selected = onApplyAutomatic.mock.lastCall?.[0] as Map<string, string>;
+    expect([...selected.entries()]).toEqual([]);
+    expect(onChange).not.toHaveBeenCalled();
   });
 });

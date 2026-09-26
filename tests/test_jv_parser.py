@@ -9,12 +9,35 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from web.jv_parser import (
     ANALYSIS_SCHEMA_VERSION,
     _flat_metrics_from_analysis,
+    _instrument_metrics_from_info,
+    _statistic_section_metrics,
+    _summary_table_metrics,
     assign_substrates_to_groups,
     parse_jv_analysis,
     parse_jv_metrics,
 )
 
 assert ANALYSIS_SCHEMA_VERSION == 7
+
+
+class FillFactorUnitTests(unittest.TestCase):
+    def test_explicit_percent_info_label_converts_small_ff(self) -> None:
+        metrics, _ = _instrument_metrics_from_info({"FF (%)": "0.5"})
+        self.assertEqual(metrics["ff"], 0.005)
+
+    def test_explicit_percent_summary_column_converts_small_ff(self) -> None:
+        rows = [
+            ["No.", "Name", "Isc (mA)", "Fill Factor (%)"],
+            ["1", "A001.Channel1.Forward", "2", "1.0"],
+        ]
+        scans = _summary_table_metrics(rows, 0)
+        self.assertEqual(next(iter(scans.values()))[0]["ff"], 0.01)
+
+    def test_explicit_percent_statistic_row_converts_small_ff(self) -> None:
+        rows = [["No.", "1"], ["[Information]", ""], ["[Statistic]", ""],
+                ["Fill Factor (%)", "0.5"]]
+        metrics, _ = _statistic_section_metrics(rows, 0, 2)
+        self.assertEqual(metrics["ff"], 0.005)
 
 
 def multi_device_csv_with_summary(
@@ -255,10 +278,10 @@ class JVParserTests(unittest.TestCase):
 
         self.assertEqual(assigned["statistics"]["groups"][0]["valid_device_count"], 2)
         self.assertAlmostEqual(
-            assigned["statistics"]["groups"][1]["metrics"]["pce"]["mean"],
+            assigned["statistics"]["groups"][1]["metrics"]["forward"]["pce"]["mean"],
             12.25,
         )
-        comparison = assigned["statistics"]["comparisons"][0]["metrics"]["pce"]
+        comparison = next(row for row in assigned["statistics"]["comparisons"] if row["direction"] == "forward")["metrics"]["pce"]
         self.assertAlmostEqual(comparison["mean_difference"], 2.0)
         self.assertEqual(comparison["test_method"], "exact permutation")
         self.assertIsNotNone(comparison["p_value"])
@@ -790,7 +813,7 @@ class DeviceExclusionTests(unittest.TestCase):
         self.assertEqual(target_row["excluded_device_count"], 1)
         # The remaining target device (J 21) against control (J 20): the
         # excluded 19 mA/cm2 outlier no longer pulls the target mean down.
-        comparison = assigned["statistics"]["comparisons"][0]["metrics"]["pce"]
+        comparison = next(row for row in assigned["statistics"]["comparisons"] if row["direction"] == "forward")["metrics"]["pce"]
         self.assertAlmostEqual(comparison["mean_difference"], 0.5)
 
     def test_flat_cache_pools_non_excluded_valid_traces(self) -> None:
@@ -1243,7 +1266,7 @@ class DirectionalMetricsTests(unittest.TestCase):
         self.assertNotIn("summary", analysis)
         self.assertNotIn("acquisition_summary", analysis)
 
-    def test_group_statistics_pool_all_scans_by_default(self) -> None:
+    def test_group_statistics_keep_forward_and_reverse_separate(self) -> None:
         analysis = parse_jv_analysis(
             multi_device_csv([20.0, 16.0, 24.0, 20.0],
                              device_labels=["A001 Channel 1", "A002 Channel 1"])
@@ -1253,9 +1276,11 @@ class DirectionalMetricsTests(unittest.TestCase):
         assigned = assign_substrates_to_groups(analysis, {"A001": "control", "A002": "control"}, groups)
 
         control = assigned["statistics"]["groups"][0]
-        # Pooled scans: forward {10, 12}, reverse {8, 10} -> combined {8, 10, 10, 12}.
-        self.assertEqual(control["metrics"]["pce"]["n"], 4)
-        self.assertAlmostEqual(control["metrics"]["pce"]["mean"], 10.0)
+        self.assertEqual(control["metrics"]["forward"]["pce"]["n"], 2)
+        self.assertEqual(control["metrics"]["reverse"]["pce"]["n"], 2)
+        self.assertAlmostEqual(control["metrics"]["forward"]["pce"]["mean"], 11.0)
+        self.assertAlmostEqual(control["metrics"]["reverse"]["pce"]["mean"], 9.0)
+        self.assertNotIn("pce", control["metrics"])
 
     def test_v5_analysis_is_migrated_on_read(self) -> None:
         analysis = parse_jv_analysis(multi_device_csv([20.0, 16.0]))

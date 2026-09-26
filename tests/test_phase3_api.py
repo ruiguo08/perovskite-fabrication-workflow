@@ -31,7 +31,7 @@ from perovskite_bo import (
 from web import create_app
 from web.repository import ExecutionStatus, PreparationStatus, UserRole
 
-from tests.test_jv_parser import channel_labeled_csv, multi_device_csv
+from tests.test_jv_parser import channel_labeled_csv, instrument_named_csv, multi_device_csv
 from tests.layout_fixtures import seed_standard_layouts
 from tests.test_web_app import complete_guided_setup
 
@@ -691,6 +691,39 @@ class Phase3ApiTests(unittest.TestCase):
         written = [s.substrate_mark for s in substrates if s.substrate_mark == "A001"]
         self.assertEqual(len(written), 1, f"laser mark not written back: {substrates}")
 
+    def test_corrects_saved_laser_mark_assignment_with_reason(self) -> None:
+        experiment_id = self._create_released_experiment(
+            OWNER_USERNAME, OWNER_PASSWORD, "phase3-mark-correction"
+        )
+        batch_id = self._create_completed_owner_batch(experiment_id)
+        uploaded = self.client.post(
+            f"/api/experiments/{experiment_id}/results",
+            files={"result_file": (
+                "marked.csv", self._long_device_label_csv("A001 Channel 1"), "text/csv"
+            )},
+            data={"fabrication_batch_id": str(batch_id)},
+        )
+        self.assertEqual(uploaded.status_code, 201, uploaded.text)
+        file_id = int(uploaded.json()["id"])
+        detail = self.client.get(f"/api/results/{file_id}").json()
+        control_id = next(group["batch_condition_id"] for group in detail["groups"] if group["kind"] == "control")
+        target_id = next(group["batch_condition_id"] for group in detail["groups"] if group["kind"] == "target")
+        def assign(condition_id: int, reason: str | None = None):
+            payload = {"assignments": [{"analysis_substrate_id": "A001", "batch_condition_id": condition_id}]}
+            if reason:
+                payload["correction_reason"] = reason
+            return self.client.post(f"/api/results/{file_id}/assignments", json=payload)
+
+        first = assign(control_id)
+        self.assertEqual(first.status_code, 200, first.text)
+        corrected = assign(target_id, "Corrected laboratory condition log")
+        self.assertEqual(corrected.status_code, 200, corrected.text)
+        self.assertEqual(corrected.json()["analysis"]["substrates"][0]["batch_condition_id"], target_id)
+        substrates = asyncio.run(self.app.state.repository.get_fabrication_substrates_for_batch(batch_id))
+        marked = [substrate for substrate in substrates if substrate.substrate_mark == "A001"]
+        self.assertEqual(len(marked), 1)
+        self.assertEqual(marked[0].batch_condition_id, target_id)
+
     def test_rejects_laser_mark_already_associated_with_another_condition(self) -> None:
         """A laser mark already bound to a condition substrate cannot be
         associated with a different condition's substrate (one glass mark maps
@@ -1318,6 +1351,51 @@ class Phase3ApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400, response.text)
         self.assertIn("duplicate", response.json()["detail"])
+
+    def test_reassignment_requires_reason_and_audits_old_and_new_conditions(self) -> None:
+        from sqlalchemy import select
+        from web.database import audit_events
+
+        experiment_id = self._create_released_experiment(
+            OWNER_USERNAME, OWNER_PASSWORD, "phase3-correction"
+        )
+        batch_id = self._create_completed_owner_batch(experiment_id)
+        upload = self.client.post(
+            f"/api/experiments/{experiment_id}/results",
+            files={"result_file": ("instrument-names.csv", instrument_named_csv(
+                ["Control1", "Target1"], [1],
+            ).encode("utf-8"), "text/csv")},
+            data={"fabrication_batch_id": str(batch_id)},
+        )
+        self.assertEqual(upload.status_code, 201, upload.text)
+        file_id = int(upload.json()["id"])
+        payload, substrate_id, _ = self._assignment_payload(file_id)
+        initial = self.client.post(f"/api/results/{file_id}/assignments", json=payload)
+        self.assertEqual(initial.status_code, 200, initial.text)
+        old_condition = payload["assignments"][0]["batch_condition_id"]
+        new_condition = payload["assignments"][1]["batch_condition_id"]
+        payload["assignments"][0]["batch_condition_id"] = new_condition
+        payload["assignments"][1]["batch_condition_id"] = old_condition
+        rejected = self.client.post(f"/api/results/{file_id}/assignments", json=payload)
+        self.assertEqual(rejected.status_code, 400, rejected.text)
+        self.assertIn("correction reason", rejected.json()["detail"])
+
+        payload["correction_reason"] = "Corrected mislabeled substrate"
+        corrected = self.client.post(f"/api/results/{file_id}/assignments", json=payload)
+        self.assertEqual(corrected.status_code, 200, corrected.text)
+
+        async def audit_details():
+            async with self.app.state.database.begin() as connection:
+                return (await connection.execute(select(audit_events.c.details).where(
+                    audit_events.c.action == "result.assign_groups",
+                    audit_events.c.entity_id == str(file_id),
+                ).order_by(audit_events.c.id.desc()).limit(1))).scalar_one()
+
+        details = asyncio.run(audit_details())
+        self.assertEqual(details["correction_reason"], "Corrected mislabeled substrate")
+        self.assertIn({"analysis_substrate_id": substrate_id,
+                       "from_batch_condition_id": old_condition,
+                       "to_batch_condition_id": new_condition}, details["assignment_changes"])
 
     def test_assignment_rejects_missing_substrate(self) -> None:
         _, _, file_id = self._owner_batch_and_result()

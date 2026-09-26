@@ -12,7 +12,7 @@ import { RecipeSnapshotSummary } from "../components/RecipeSnapshotSummary";
 import { StatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/Toast";
 import { apiFetch } from "../lib/api";
-import { formatDateTime, formatNumber, scaleMetric } from "../lib/format";
+import { formatDateTime } from "../lib/format";
 import { useApiResource } from "../lib/useApiResource";
 import type { ExperimentDetail, FabricationBatchSummary, SubstrateException } from "../types/api";
 interface PlanAction {
@@ -301,7 +301,7 @@ export function ExperimentDetailPage() {
               <article className="result-summary-card" key={result.id} data-result-row={result.id}>
                 <Link className="record-link" to={`/results/${result.id}`}>{result.filename}</Link>
                 <code>{result.sha256}</code>
-                <span>{Object.entries(result.metrics).map(([key, value]) => `${key}: ${formatNumber(scaleMetric(key, value), key === "voc" ? 3 : 2)}`).join(" · ") || "No summary metrics"}</span>
+                <Link className="record-link" to={`/results/${result.id}`}>View direction-specific statistics</Link>
               </article>
             ))}
           </div>
