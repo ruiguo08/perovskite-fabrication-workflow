@@ -128,6 +128,8 @@ describe("ExperimentBuilderPage", () => {
     expect(screen.getByText(/baseline reference \(optional shortcut\)/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /plan from scratch/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save experiment" })).toBeDisabled();
+    expect(screen.getByText("Complete each step, then review the plan before saving.")).toBeInTheDocument();
+    expect(screen.queryByText(/review items remain/)).not.toBeInTheDocument();
     await waitFor(() => expect(apiFetchMock).toHaveBeenCalledTimes(6));
     for (const path of ["/api/campaigns", "/api/baselines", "/api/layer-presets", "/api/materials", "/api/device-layouts", "/api/editor-config"]) {
       expect(apiFetchMock).toHaveBeenCalledWith(path);

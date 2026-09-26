@@ -288,6 +288,36 @@
   border-bottom: 1px solid var(--border-strong);
 }
 
+.analysis-preview-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--amber-soft);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+  color: var(--graphite);
+}
+
+.analysis-preview-banner > div:first-child {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.analysis-preview-banner strong,
+.analysis-preview-label {
+  color: var(--amber);
+}
+
+.analysis-preview-label {
+  margin-left: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
 .result-section-nav__button,
 .result-figure-nav__button {
   flex: 0 0 auto;
@@ -575,4 +605,22 @@
     display: grid;
     grid-template-columns: 1fr;
   }
+}
+.run-sheet-jump {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 0 0 16px;
+  font-size: var(--text-sm);
+}
+
+.run-sheet-jump span {
+  color: var(--steel);
+  font-weight: 600;
+}
+
+.run-sheet-jump a {
+  color: var(--ito-strong);
+  text-underline-offset: 3px;
 }

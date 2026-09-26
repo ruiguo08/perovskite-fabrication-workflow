@@ -42,7 +42,7 @@ export function JvChart({ resultId, devices, groups, figureRevision }: {
     const next = new Set<string>();
     for (const group of groups) {
       const best = devices
-        .filter((device) => device.group_id === group.group_id && !device.excluded && hasMetrics(device.metrics))
+        .filter((device) => device.group_id === group.group_id && hasMetrics(device.metrics))
         .sort((left, right) => (bestPce(right) ?? -Infinity) - (bestPce(left) ?? -Infinity))[0];
       if (best) next.add(best.device_id);
     }

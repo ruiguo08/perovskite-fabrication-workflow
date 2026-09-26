@@ -8,6 +8,7 @@ import { EmptyState } from "../components/EmptyState";
 import { ErrorState } from "../components/ErrorState";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
+import type { FabricationBatchListItem, ResultListItem } from "../types/api";
 
 interface Experiment {
   id: number;
@@ -40,6 +41,12 @@ interface Material {
 
 interface DeviceLayoutSummary {
   code: string;
+}
+
+interface NextAction {
+  label: string;
+  detail: string;
+  to: string;
 }
 
 function stackSummary(experiment: Experiment): string {
@@ -144,20 +151,26 @@ export function OverviewPage() {
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [materials, setMaterials] = useState<Material[] | null>(null);
   const [layouts, setLayouts] = useState<DeviceLayoutSummary[] | null>(null);
+  const [batches, setBatches] = useState<FabricationBatchListItem[] | null>(null);
+  const [results, setResults] = useState<ResultListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [experimentRows, campaignRows, materialRows, layoutRows] = await Promise.all([
+      const [experimentRows, campaignRows, materialRows, layoutRows, batchRows, resultRows] = await Promise.all([
         apiFetch<Experiment[]>("/api/experiments"),
         apiFetch<Campaign[]>("/api/campaigns"),
         apiFetch<Material[]>("/api/materials"),
         apiFetch<DeviceLayoutSummary[]>("/api/device-layouts"),
+        apiFetch<FabricationBatchListItem[]>("/api/fabrication-batches"),
+        apiFetch<ResultListItem[]>("/api/results"),
       ]);
       setExperiments(experimentRows);
       setCampaigns(campaignRows);
       setMaterials(materialRows);
       setLayouts(layoutRows);
+      setBatches(batchRows);
+      setResults(resultRows);
       setError(null);
     } catch (loadError) {
       setError(
@@ -185,7 +198,7 @@ export function OverviewPage() {
     );
   }
 
-  if (experiments === null || campaigns === null || materials === null || layouts === null) {
+  if (experiments === null || campaigns === null || materials === null || layouts === null || batches === null || results === null) {
     return (
       <div
         className="app-loading"
@@ -210,10 +223,48 @@ export function OverviewPage() {
     })
     .slice(0, 10);
 
+  const nextActions: NextAction[] = [
+    ...results.filter((result) => !result.group_assignment).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).map((result) => ({
+      label: `Assign ${result.filename}`,
+      detail: "Assign substrate conditions to use this result in statistics and uniformity.",
+      to: `/results/${result.id}`,
+    })),
+    ...batches.filter((batch) => batch.status === "in_progress").sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at)).map((batch) => ({
+      label: `Continue ${batch.batch_code}`,
+      detail: "Record fabrication steps and complete the run sheet.",
+      to: `/experiments/${batch.experiment_id}/batches/${batch.id}`,
+    })),
+    ...(user?.role === "instructor" || user?.role === "administrator" ? experiments.filter((experiment) => experiment.plan_status === "pending_approval").map((experiment) => ({
+      label: `Approve ${experiment.experiment_code ?? `experiment ${experiment.id}`}`,
+      detail: "Review the submitted plan before fabrication.",
+      to: `/experiments/${experiment.id}`,
+    })) : []),
+    ...experiments.filter((experiment) => experiment.plan_status === "draft").map((experiment) => ({
+      label: `Continue ${experiment.experiment_code ?? `experiment ${experiment.id}`}`,
+      detail: "Finish and submit the draft plan.",
+      to: `/experiments/${experiment.id}`,
+    })),
+  ].slice(0, 5);
+
   return (
     <>
       <PageHeader title="Overview" description="Laboratory activity at a glance." />
       <SetupChecklist role={user?.role ?? ""} layouts={layouts} campaigns={campaigns} />
+      <section className="panel next-actions" aria-labelledby="next-actions-title">
+        <h2 className="panel__title" id="next-actions-title">Next actions</h2>
+        {nextActions.length === 0 ? (
+          <p className="run-sheet-muted">No work needs attention right now.</p>
+        ) : (
+          <ol className="next-actions__list">
+            {nextActions.map((action) => (
+              <li key={action.to}>
+                <Link className="record-link" to={action.to}>{action.label}</Link>
+                <p>{action.detail}</p>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
       <div className="stat-tiles">
         <Link className="stat-tile" to="/experiments" aria-label={`${experiments?.length ?? "…"} experiments, view all experiments`}>
           <span className="stat-tile__value">{experiments?.length ?? "…"}</span>

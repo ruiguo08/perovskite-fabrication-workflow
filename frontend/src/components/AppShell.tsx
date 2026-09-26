@@ -45,7 +45,6 @@ const NAV_GROUPS: { label: string; items: NavItemDef[] }[] = [
     label: "Management",
     items: [
       { label: "Campaigns", path: "/campaigns" },
-      { label: "Review queue", disabled: true, minRole: "instructor" },
       { label: "Users", path: "/users", minRole: "administrator" },
     ],
   },

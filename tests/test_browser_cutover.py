@@ -326,10 +326,10 @@ class CutoverBrowserTests(unittest.TestCase):
 
     def test_role_navigation_student_instructor_admin(self) -> None:
         """Student/instructor/admin see role-specific navigation in the React shell."""
-        for username, password, display_name, should_see_users, should_see_review in (
-            (STUDENT_USERNAME, STUDENT_PASSWORD, "Cutover Student", False, False),
-            (INSTRUCTOR_USERNAME, INSTRUCTOR_PASSWORD, "Cutover Instructor", False, True),
-            ("cutover-admin", "Cutover admin password 2026!", "Administrator", True, True),
+        for username, password, display_name, should_see_users in (
+            (STUDENT_USERNAME, STUDENT_PASSWORD, "Cutover Student", False),
+            (INSTRUCTOR_USERNAME, INSTRUCTOR_PASSWORD, "Cutover Instructor", False),
+            ("cutover-admin", "Cutover admin password 2026!", "Administrator", True),
         ):
             profile = str(Path(self.temporary_directory.name) / f"chrome-{display_name.lower().replace(' ', '-')}")
             process, session = self._open("/app/login", profile)
@@ -353,15 +353,12 @@ class CutoverBrowserTests(unittest.TestCase):
                 else:
                     self.assertFalse(users_link, f"{display_name} should NOT see Users navigation")
 
-                # Assert Review queue nav visibility.
+                # The unfinished Review queue must not appear for any role.
                 review_link = evaluate(
                     session,
                     "Boolean(Array.from(document.querySelectorAll('a.nav-item,span.nav-item,button.nav-item')).find(e=>e.textContent.trim()==='Review queue'))",
                 )
-                if should_see_review:
-                    self.assertTrue(review_link, f"{display_name} should see Review queue navigation")
-                else:
-                    self.assertFalse(review_link, f"{display_name} should NOT see Review queue navigation")
+                self.assertFalse(review_link, f"{display_name} should not see unfinished Review queue navigation")
 
                 self._assert_viewport(session, 320)
                 self._assert_no_overflow(session, f"{display_name} shell")
